@@ -1,19 +1,42 @@
 import type { GameState, LogEntry, DangerEvent, Gravesite } from '../types/game';
 import type { SpeciesConfig, DepthLayer } from '../types/fish';
+import { WORLD_TOUR_ROUTE, ROUTE_TOTAL_DISTANCE_KM } from '../data/oceanRoutes';
+import { OCEAN_CURRENTS } from '../data/currents';
+import { FISHING_ZONES } from '../data/fishingZones';
+import { MARINE_PROTECTED_AREAS } from '../data/marineProtectedAreas';
+import { DANGER_ZONES } from '../data/dangerZones';
+import { SPECIES_REAL_DATA } from '../data/speciesData';
 
-const TOTAL_DISTANCE_KM = 50_000;
+const TOTAL_DISTANCE_KM = ROUTE_TOTAL_DISTANCE_KM;
 const BASE_COMPLETION_SECONDS = 21 * 24 * 3600;
 const BOOST_DURATION = 30 * 60;
 const BOOST_COOLDOWN = 5 * 3600;
 const DANGER_COUNTDOWN = 300;
 const SHIELD_MAX = 2;
 
+function haversineKm(a: [number, number], b: [number, number]): number {
+  const R = 6371;
+  const dLat = ((b[0] - a[0]) * Math.PI) / 180;
+  const dLng = ((b[1] - a[1]) * Math.PI) / 180;
+  const sinLat = Math.sin(dLat / 2);
+  const sinLng = Math.sin(dLng / 2);
+  const h = sinLat * sinLat + Math.cos((a[0] * Math.PI) / 180) * Math.cos((b[0] * Math.PI) / 180) * sinLng * sinLng;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
 const SAMPLE_GRAVESITES: Gravesite[] = [
-  { id: 'g1', coord: [35.2, 129.8], species: '고등어', nickname: '참치장인', causeOfDeath: '대형 트롤선 조업 구역 진입', diedAt: '2024-03-15', distanceTraveled: 12400 },
-  { id: 'g2', coord: [25.0, -80.5], species: '날치', nickname: 'SpeedRunner', causeOfDeath: '카리브해 포식자 습격', diedAt: '2024-03-18', distanceTraveled: 31200 },
-  { id: 'g3', coord: [-33.8, 18.4], species: '연어', nickname: '남극탐험가', causeOfDeath: '희망봉 폭풍 해역', diedAt: '2024-03-20', distanceTraveled: 8900 },
-  { id: 'g4', coord: [0.5, 100.2], species: '멸치', nickname: '작지만강한', causeOfDeath: '말라카 해협 정치망', diedAt: '2024-03-22', distanceTraveled: 5600 },
-  { id: 'g5', coord: [45.3, -30.1], species: '황새치', nickname: 'SwordMaster', causeOfDeath: '대서양 연승선 주낙', diedAt: '2024-03-25', distanceTraveled: 22000 },
+  { id: 'g1', coord: [35.2, 129.8], species: '고등어', nickname: '참치장인', causeOfDeath: '동해 정치망 어선단 진입', diedAt: '2024-03-15', distanceTraveled: 12400 },
+  { id: 'g2', coord: [25.0, -80.5], species: '날치', nickname: 'SpeedRunner', causeOfDeath: '카리브해 바라쿠다 포식', diedAt: '2024-03-18', distanceTraveled: 31200 },
+  { id: 'g3', coord: [-35.0, 20.0], species: '연어', nickname: '남극탐험가', causeOfDeath: '희망봉 폭풍 해역 (아굴라스 해류 충돌)', diedAt: '2024-03-20', distanceTraveled: 8900 },
+  { id: 'g4', coord: [2.0, 102.0], species: '멸치', nickname: '작지만강한', causeOfDeath: '말라카 해협 대형 선망 어선', diedAt: '2024-03-22', distanceTraveled: 5600 },
+  { id: 'g5', coord: [45.3, -50.0], species: '황새치', nickname: 'SwordMaster', causeOfDeath: '그랜드 뱅크스 연승선 주낙', diedAt: '2024-03-25', distanceTraveled: 22000 },
+  { id: 'g6', coord: [-56.0, -66.0], species: '참다랑어', nickname: '드레이크의꿈', causeOfDeath: '드레이크 해협 폭풍 (풍속 50m/s)', diedAt: '2024-04-01', distanceTraveled: 38000 },
+  { id: 'g7', coord: [18.0, 135.0], species: '가시복', nickname: 'PufferKing', causeOfDeath: '서태평양 태풍 (카테고리 5)', diedAt: '2024-04-05', distanceTraveled: 4200 },
+  { id: 'g8', coord: [-12.0, -78.0], species: '고등어', nickname: 'Anchoa', causeOfDeath: '페루 연안 선망 어선단 (멸치잡이)', diedAt: '2024-04-10', distanceTraveled: 35000 },
 ];
 
 function createInitialState(): GameState {
@@ -52,7 +75,12 @@ export class OceanEngine {
   private listeners: Set<() => void> = new Set();
   private tickTimer: number | null = null;
   private dangerTimer: number | null = null;
-  private nextDangerAt = 0;
+  private nextDangerCheck = 0;
+  private waypointIndex = 0;
+  private waypointT = 0;
+  private lastRegionLog = '';
+  private lastCurrentLog = '';
+  private lastZoneLog = '';
 
   constructor() {
     this.state = createInitialState();
@@ -80,11 +108,22 @@ export class OceanEngine {
     this.state.currentCoord = [lat, lng];
     this.state.pathHistory = [[lat, lng]];
     this.state.phase = 'PLAYING';
-    this.nextDangerAt = 60 + Math.random() * 120;
+
+    this.waypointIndex = this.findNearestWaypoint(lat, lng);
+    this.waypointT = 0;
+    this.nextDangerCheck = 30 + Math.random() * 60;
+
+    const realData = SPECIES_REAL_DATA[species.id];
+    const wp = WORLD_TOUR_ROUTE[this.waypointIndex];
+
     this.addLog(`${species.emoji} ${species.nameKo}(${species.name})로 출발!`, 'success');
-    this.addLog(`좌표: [${lat.toFixed(2)}°, ${lng.toFixed(2)}°]`, 'info');
+    this.addLog(`출발 좌표: [${lat.toFixed(2)}°, ${lng.toFixed(2)}°]`, 'info');
+    this.addLog(`가장 가까운 항로: ${wp.region} (${wp.name})`, 'info');
     this.addLog(`목표: 전 세계 해양 ${TOTAL_DISTANCE_KM.toLocaleString()}km 일주`, 'info');
-    this.addLog(`예상 소요: ${species.expectedStandardDays}일 (${species.baseSpeedMultiplier}x)`, 'info');
+    this.addLog(`예상 소요: ${species.expectedStandardDays}일 (배율 ${species.baseSpeedMultiplier}x)`, 'info');
+    if (realData) {
+      this.addLog(`실제 순항 속도: ${realData.cruisingSpeedKmH} km/h | 순간 속도: ${realData.burstSpeedKmH} km/h`, 'system');
+    }
     this.startTick();
     this.notify();
   }
@@ -93,7 +132,11 @@ export class OceanEngine {
     if (this.state.phase !== 'PLAYING') return;
     const prev = this.state.depth;
     this.state.depth = depth;
-    const labels: Record<DepthLayer, string> = { SURFACE: '표층 (+30% 속도, 어선 취약)', MID: '중층 (표준)', ABYSS: '심해 (-50% 속도, 어선 면역)' };
+    const labels: Record<DepthLayer, string> = {
+      SURFACE: '표층 0~50m (+30% 속도, 어선·포식 취약)',
+      MID: '중층 50~200m (표준, 연승선 위험)',
+      ABYSS: '심해 200m+ (-50% 속도, 어선 면역)',
+    };
     if (prev !== depth) {
       this.addLog(`수심 변경: ${labels[depth]}`, 'info');
     }
@@ -106,7 +149,7 @@ export class OceanEngine {
     this.state.isBoostActive = true;
     this.state.boostRemainingSeconds = BOOST_DURATION;
     this.state.boostCooldownRemaining = BOOST_COOLDOWN;
-    this.addLog('2x 터보 부스트 가동! (30분 지속)', 'success');
+    this.addLog('2x 터보 부스트 가동! (30분 지속, 쿨다운 5시간)', 'success');
     this.notify();
   }
 
@@ -129,7 +172,7 @@ export class OceanEngine {
   toggleSleepMode() {
     this.state.isSleepModeActive = !this.state.isSleepModeActive;
     if (this.state.isSleepModeActive) {
-      this.addLog('야간 잠항 모드 ON (심해 자동 잠항, 위험 면역)', 'info');
+      this.addLog('야간 잠항 모드 ON (심해 자동 잠항, 어선·포식 면역, 속도 -70%)', 'info');
     } else {
       this.addLog('야간 잠항 모드 OFF', 'info');
     }
@@ -148,7 +191,7 @@ export class OceanEngine {
     this.state.dangerCountdown = 0;
     this.state.currentDanger = null;
     this.addLog('긴급 회피 성공! 안전 지대로 이탈.', 'success');
-    this.nextDangerAt = this.state.elapsedSeconds + 120 + Math.random() * 180;
+    this.nextDangerCheck = this.state.elapsedSeconds + 90 + Math.random() * 120;
     this.notify();
   }
 
@@ -157,6 +200,9 @@ export class OceanEngine {
     if (this.dangerTimer) clearInterval(this.dangerTimer);
     this.state = createInitialState();
     this.state.phase = 'MENU';
+    this.lastRegionLog = '';
+    this.lastCurrentLog = '';
+    this.lastZoneLog = '';
     this.addLog('시스템 재시작. 새 항해를 시작하세요.', 'system');
     this.notify();
   }
@@ -165,7 +211,117 @@ export class OceanEngine {
     const now = new Date();
     const time = now.toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
     this.state.logs.unshift({ time, message, type });
-    if (this.state.logs.length > 80) this.state.logs.pop();
+    if (this.state.logs.length > 100) this.state.logs.pop();
+  }
+
+  private findNearestWaypoint(lat: number, lng: number): number {
+    let minDist = Infinity;
+    let nearest = 0;
+    for (let i = 0; i < WORLD_TOUR_ROUTE.length; i++) {
+      const d = haversineKm([lat, lng], WORLD_TOUR_ROUTE[i].coord);
+      if (d < minDist) { minDist = d; nearest = i; }
+    }
+    return nearest;
+  }
+
+  private getCurrentBoost(): number {
+    const pos = this.state.currentCoord;
+    let maxBoost = 1.0;
+    for (const current of OCEAN_CURRENTS) {
+      for (let i = 0; i < current.path.length - 1; i++) {
+        const segDist = Math.min(
+          haversineKm(pos, current.path[i]),
+          haversineKm(pos, current.path[i + 1])
+        );
+        if (segDist < 300) {
+          const proximity = 1 - segDist / 300;
+          const boost = 1 + (current.boostMultiplier - 1) * proximity;
+          if (boost > maxBoost) {
+            maxBoost = boost;
+            const logKey = current.id;
+            if (this.lastCurrentLog !== logKey && proximity > 0.5) {
+              this.lastCurrentLog = logKey;
+              this.addLog(`🌊 ${current.nameKo} 진입 (해류 가속 ${current.boostMultiplier}x, ${current.avgSpeedKmH}km/h)`, 'info');
+            }
+          }
+        }
+      }
+    }
+    return maxBoost;
+  }
+
+  private isInMPA(): boolean {
+    for (const mpa of MARINE_PROTECTED_AREAS) {
+      const d = haversineKm(this.state.currentCoord, mpa.center);
+      if (d < mpa.radiusKm) {
+        const logKey = mpa.id;
+        if (this.lastZoneLog !== logKey) {
+          this.lastZoneLog = logKey;
+          this.addLog(`🏝️ ${mpa.nameKo} 진입 (해양보호구역, 어업 위험 0%)`, 'success');
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private getFishingIntensity(): number {
+    if (this.isInMPA()) return 0;
+    if (this.state.depth === 'ABYSS') return 0;
+    let maxIntensity = 0;
+    for (const zone of FISHING_ZONES) {
+      const d = haversineKm(this.state.currentCoord, zone.center);
+      if (d < zone.radiusKm) {
+        const proximity = 1 - d / zone.radiusKm;
+        const intensity = zone.intensity * proximity;
+        if (intensity > maxIntensity) maxIntensity = intensity;
+      }
+    }
+    return maxIntensity;
+  }
+
+  private getDangerLevel(): { level: number; source: DangerEvent | null } {
+    const pos = this.state.currentCoord;
+    const month = new Date().getMonth() + 1;
+    let maxDanger = 0;
+    let source: DangerEvent | null = null;
+
+    for (const zone of DANGER_ZONES) {
+      const d = haversineKm(pos, zone.center);
+      if (d < zone.radiusKm) {
+        const proximity = 1 - d / zone.radiusKm;
+        let danger = zone.baseDanger * proximity;
+        if (zone.seasonalPeak.includes(month)) danger *= 1.3;
+        if (danger > maxDanger) {
+          maxDanger = danger;
+          source = {
+            type: zone.type === 'STORM_CORRIDOR' ? 'STORM' : zone.type === 'DEAD_ZONE' ? 'DEAD_ZONE' : 'FISHING',
+            name: zone.nameKo,
+            severity: danger,
+            coord: zone.center,
+            radius: zone.radiusKm,
+          };
+        }
+      }
+    }
+
+    const fishIntensity = this.getFishingIntensity();
+    if (fishIntensity > maxDanger && this.state.depth !== 'ABYSS') {
+      maxDanger = fishIntensity;
+      const nearestZone = FISHING_ZONES.reduce((best, z) => {
+        const d = haversineKm(pos, z.center);
+        return d < haversineKm(pos, best.center) ? z : best;
+      });
+      source = {
+        type: 'FISHING',
+        name: `${nearestZone.nameKo} 어선단 (${nearestZone.gearTypes[0]})`,
+        severity: fishIntensity,
+        coord: nearestZone.center,
+        radius: nearestZone.radiusKm,
+      };
+    }
+
+    return { level: maxDanger, source };
   }
 
   private getEffectiveSpeed(): number {
@@ -178,26 +334,10 @@ export class OceanEngine {
     if (this.state.depth === 'ABYSS') speed *= 0.5;
     if (this.state.isSleepModeActive) speed *= 0.3;
 
-    return speed;
-  }
+    const currentBoost = this.getCurrentBoost();
+    speed *= currentBoost;
 
-  private generateDanger(): DangerEvent {
-    const types: DangerEvent['type'][] = ['FISHING', 'PREDATOR', 'STORM', 'DEAD_ZONE'];
-    const type = types[Math.floor(Math.random() * types.length)];
-    const names: Record<DangerEvent['type'], string[]> = {
-      FISHING: ['대형 트롤선 출몰', '선망 어선단 접근', '연승선 주낙 발견'],
-      PREDATOR: ['대형 포식자 접근', '상어 무리 발견', '해양 포유류 출몰'],
-      STORM: ['태풍 접근 경보', '폭풍 해역 진입', '거대 파도 경보'],
-      DEAD_ZONE: ['저산소 데드존 진입', '적조 해역 감지', '오염 해역 경고'],
-    };
-    const nameList = names[type];
-    return {
-      type,
-      name: nameList[Math.floor(Math.random() * nameList.length)],
-      severity: 0.65 + Math.random() * 0.35,
-      coord: [this.state.currentCoord[0] + (Math.random() - 0.5) * 5, this.state.currentCoord[1] + (Math.random() - 0.5) * 5],
-      radius: 200 + Math.random() * 200,
-    };
+    return speed;
   }
 
   private checkEvasion(danger: DangerEvent): boolean {
@@ -212,8 +352,8 @@ export class OceanEngine {
       evasionRate = this.state.species.predatorEvasion;
       if (this.state.isSkillActive) evasionRate = Math.min(100, evasionRate + 30);
     } else {
-      evasionRate = 40 + Math.random() * 30;
-      if (this.state.depth === 'ABYSS') evasionRate += 20;
+      evasionRate = 30 + this.state.species.predatorEvasion * 0.3;
+      if (this.state.depth === 'ABYSS') evasionRate += 25;
     }
 
     return Math.random() * 100 < evasionRate;
@@ -222,11 +362,14 @@ export class OceanEngine {
   private die(cause: string) {
     this.state.phase = 'GAME_OVER';
     this.state.deathCause = cause;
-    const dna = Math.floor((this.state.distanceKm / 100) * (1 + this.state.progressPct / 100) + (this.state.elapsedSeconds / 3600) * 2);
+    const dna = Math.floor(
+      (this.state.distanceKm / 100) * (1 + this.state.progressPct / 100)
+      + (this.state.elapsedSeconds / 3600) * 2
+    );
     this.state.dnaPoints = dna;
     this.state.totalDnaEarned += dna;
     this.addLog(`사망: ${cause}`, 'danger');
-    this.addLog(`획득 DNA: ${dna}pt | 항해 거리: ${this.state.distanceKm.toFixed(0)}km`, 'system');
+    this.addLog(`획득 DNA: ${dna}pt | 항해 거리: ${Math.floor(this.state.distanceKm).toLocaleString()}km`, 'system');
 
     this.state.gravesites.push({
       id: `g_${Date.now()}`,
@@ -251,25 +394,41 @@ export class OceanEngine {
       const dt = this.state.simSpeed;
       this.state.elapsedSeconds += dt;
 
+      // Waypoint-based navigation
       const speed = this.getEffectiveSpeed();
       const distDelta = speed * dt;
       this.state.distanceKm += distDelta;
       this.state.progressPct = Math.min(100, (this.state.distanceKm / TOTAL_DISTANCE_KM) * 100);
 
-      const lngDelta = (distDelta / 111.32) * Math.cos((this.state.currentCoord[0] * Math.PI) / 180);
-      let latWobble = Math.sin(this.state.elapsedSeconds * 0.001) * 0.002 * dt;
-      let newLng = this.state.currentCoord[1] + lngDelta;
-      let newLat = this.state.currentCoord[0] + latWobble;
-      if (newLng > 180) newLng -= 360;
-      if (newLng < -180) newLng += 360;
-      newLat = Math.max(-70, Math.min(70, newLat));
-      this.state.currentCoord = [newLat, newLng];
+      const routeLen = WORLD_TOUR_ROUTE.length;
+      const nextIdx = (this.waypointIndex + 1) % routeLen;
+      const fromWP = WORLD_TOUR_ROUTE[this.waypointIndex].coord;
+      const toWP = WORLD_TOUR_ROUTE[nextIdx].coord;
+      const segmentDist = haversineKm(fromWP, toWP);
+      const tDelta = segmentDist > 0 ? distDelta / segmentDist : 0;
+      this.waypointT += tDelta;
 
-      if (this.state.pathHistory.length === 0 || this.state.elapsedSeconds % 10 < dt) {
-        this.state.pathHistory.push([...this.state.currentCoord]);
-        if (this.state.pathHistory.length > 500) this.state.pathHistory.shift();
+      while (this.waypointT >= 1 && this.waypointIndex < routeLen - 1) {
+        this.waypointT -= 1;
+        this.waypointIndex++;
+        const wp = WORLD_TOUR_ROUTE[this.waypointIndex];
+        if (wp.region !== this.lastRegionLog) {
+          this.lastRegionLog = wp.region;
+          this.addLog(`📍 ${wp.region} (${wp.name}) 도달`, 'info');
+        }
       }
 
+      const curFrom = WORLD_TOUR_ROUTE[Math.min(this.waypointIndex, routeLen - 1)].coord;
+      const curTo = WORLD_TOUR_ROUTE[Math.min(this.waypointIndex + 1, routeLen - 1)].coord;
+      const t = Math.max(0, Math.min(1, this.waypointT));
+      this.state.currentCoord = [lerp(curFrom[0], curTo[0], t), lerp(curFrom[1], curTo[1], t)];
+
+      if (this.state.elapsedSeconds % Math.max(5, 30 / this.state.simSpeed) < dt || this.state.pathHistory.length === 0) {
+        this.state.pathHistory.push([...this.state.currentCoord]);
+        if (this.state.pathHistory.length > 800) this.state.pathHistory.shift();
+      }
+
+      // Cooldowns
       if (this.state.boostRemainingSeconds > 0) {
         this.state.boostRemainingSeconds = Math.max(0, this.state.boostRemainingSeconds - dt);
         if (this.state.boostRemainingSeconds <= 0) {
@@ -284,52 +443,58 @@ export class OceanEngine {
         this.state.skillCooldownRemaining = Math.max(0, this.state.skillCooldownRemaining - dt);
       }
 
-      if (this.state.elapsedSeconds >= this.nextDangerAt && !this.state.isSleepModeActive) {
-        const danger = this.generateDanger();
-        this.state.currentDanger = danger;
-        this.state.phase = 'DANGER_ALERT';
-        this.state.dangerCountdown = DANGER_COUNTDOWN;
-        this.addLog(`${danger.name}! 5분 내 회피하세요!`, 'danger');
+      // Geographic danger evaluation
+      if (this.state.elapsedSeconds >= this.nextDangerCheck && !this.state.isSleepModeActive) {
+        const { level, source } = this.getDangerLevel();
+        const triggerThreshold = 0.35 - (this.state.species?.tier === 'SMALL' ? 0.15 : this.state.species?.tier === 'APEX' ? -0.15 : 0);
 
-        if (this.dangerTimer) clearInterval(this.dangerTimer);
-        this.dangerTimer = window.setInterval(() => {
-          if (this.state.phase !== 'DANGER_ALERT') {
-            if (this.dangerTimer) clearInterval(this.dangerTimer);
-            return;
-          }
-          this.state.dangerCountdown -= this.state.simSpeed;
-          if (this.state.dangerCountdown <= 0) {
-            if (this.dangerTimer) clearInterval(this.dangerTimer);
-            if (this.state.shieldTokens > 0) {
-              this.state.shieldTokens--;
-              this.state.phase = 'PLAYING';
-              this.state.currentDanger = null;
-              this.addLog(`비상 회피 버블 자동 소모! (남은: ${this.state.shieldTokens}/${SHIELD_MAX})`, 'warning');
-              this.nextDangerAt = this.state.elapsedSeconds + 120 + Math.random() * 180;
-            } else {
-              const survived = this.checkEvasion(this.state.currentDanger!);
-              if (survived) {
+        if (level > triggerThreshold && source && Math.random() < level * 0.6) {
+          this.state.currentDanger = source;
+          this.state.phase = 'DANGER_ALERT';
+          this.state.dangerCountdown = DANGER_COUNTDOWN;
+          this.addLog(`🚨 ${source.name}! 위험도 ${(source.severity * 100).toFixed(0)}% — 5분 내 회피하세요!`, 'danger');
+
+          if (this.dangerTimer) clearInterval(this.dangerTimer);
+          this.dangerTimer = window.setInterval(() => {
+            if (this.state.phase !== 'DANGER_ALERT') {
+              if (this.dangerTimer) clearInterval(this.dangerTimer);
+              return;
+            }
+            this.state.dangerCountdown -= this.state.simSpeed;
+            if (this.state.dangerCountdown <= 0) {
+              if (this.dangerTimer) clearInterval(this.dangerTimer);
+              if (this.state.shieldTokens > 0) {
+                this.state.shieldTokens--;
                 this.state.phase = 'PLAYING';
                 this.state.currentDanger = null;
-                this.addLog('위기 탈출! 간신히 생존했습니다.', 'success');
-                this.nextDangerAt = this.state.elapsedSeconds + 120 + Math.random() * 180;
+                this.addLog(`🛡️ 비상 회피 버블 자동 소모! (남은: ${this.state.shieldTokens}/${SHIELD_MAX})`, 'warning');
+                this.nextDangerCheck = this.state.elapsedSeconds + 90 + Math.random() * 120;
               } else {
-                this.die(this.state.currentDanger?.name ?? '알 수 없는 위험');
+                const survived = this.checkEvasion(this.state.currentDanger!);
+                if (survived) {
+                  this.state.phase = 'PLAYING';
+                  this.state.currentDanger = null;
+                  this.addLog('위기 탈출! 간신히 생존했습니다.', 'success');
+                  this.nextDangerCheck = this.state.elapsedSeconds + 90 + Math.random() * 120;
+                } else {
+                  this.die(this.state.currentDanger?.name ?? '알 수 없는 위험');
+                }
               }
             }
-          }
-          this.notify();
-        }, 1000);
+            this.notify();
+          }, 1000);
+        } else {
+          this.nextDangerCheck = this.state.elapsedSeconds + 30 + Math.random() * 60;
+        }
       }
 
-      if (Math.floor(this.state.elapsedSeconds) % 600 < dt && this.state.elapsedSeconds > 60) {
-        const pct = this.state.progressPct;
-        if (pct < 100) {
-          const markers = [10, 25, 50, 75, 90];
-          for (const m of markers) {
-            if (pct >= m && pct < m + 0.5) {
-              this.addLog(`항해 진행률 ${m}% 돌파!`, 'success');
-            }
+      // Milestone logs
+      const pct = this.state.progressPct;
+      if (pct < 100) {
+        const markers = [5, 10, 25, 50, 75, 90, 95];
+        for (const m of markers) {
+          if (pct >= m && pct - (distDelta / TOTAL_DISTANCE_KM * 100) < m) {
+            this.addLog(`🏁 항해 진행률 ${m}% 돌파! (${Math.floor(this.state.distanceKm).toLocaleString()}km)`, 'success');
           }
         }
       }
@@ -337,7 +502,8 @@ export class OceanEngine {
       if (this.state.progressPct >= 100) {
         this.state.progressPct = 100;
         this.state.phase = 'CLEARED';
-        this.addLog('세계 일주 완주! 보상을 선택하세요!', 'success');
+        const days = (this.state.elapsedSeconds / 86400).toFixed(1);
+        this.addLog(`🏆 세계 일주 완주! ${days}일 소요. 보상을 선택하세요!`, 'success');
         if (this.tickTimer) clearInterval(this.tickTimer);
       }
 
