@@ -10,8 +10,12 @@ import { SpeciesSelectModal } from './components/SpeciesSelectModal';
 import { ClearRewardModal } from './components/ClearRewardModal';
 import { DangerAlertModal } from './components/DangerAlertModal';
 import { GameOverModal } from './components/GameOverModal';
+import { MapOverlays } from './components/MapOverlays';
+import { OverlayToggle } from './components/OverlayToggle';
+import type { OverlayState } from './components/OverlayToggle';
 import type { GameState } from './types/game';
 import type { SpeciesConfig } from './types/fish';
+import { WORLD_TOUR_ROUTE, OCEAN_CURRENTS, FISHING_ZONES, MARINE_PROTECTED_AREAS, DANGER_ZONES } from './data';
 
 const fishIcon = (emoji: string) =>
   L.divIcon({
@@ -58,6 +62,17 @@ const App: React.FC = () => {
   const [state, setState] = useState<GameState>(engine.state);
   const [pendingCoord, setPendingCoord] = useState<[number, number] | null>(null);
   const [waitingForPin, setWaitingForPin] = useState(false);
+  const [overlays, setOverlays] = useState<OverlayState>({
+    fishing: false,
+    mpa: false,
+    currents: false,
+    danger: true,
+    route: true,
+  });
+
+  const handleOverlayToggle = useCallback((key: keyof OverlayState) => {
+    setOverlays(prev => ({ ...prev, [key]: !prev[key] }));
+  }, []);
 
   useEffect(() => {
     const unsub = engine.subscribe(() => {
@@ -122,7 +137,7 @@ const App: React.FC = () => {
             <h1 className="text-3xl text-cyan-400 font-bold mb-2 tracking-wider">OCEAN WANDERER</h1>
             <p className="text-gray-500 text-xs mb-1">v3.0 — 실데이터 기반 글로벌 해양 일주 시뮬레이터</p>
             <p className="text-gray-400 text-sm mb-6 mt-3">
-              전 세계 바다 50,000km를 일주하세요.<br/>
+              전 세계 바다 75,000km를 일주하세요.<br/>
               어종을 선택하고, 출발지를 찍어 항해를 시작합니다.
             </p>
             <button
@@ -244,9 +259,28 @@ const App: React.FC = () => {
               }}
             />
           )}
+
+          {overlays.route && (
+            <Polyline
+              positions={WORLD_TOUR_ROUTE.map(w => w.coord)}
+              pathOptions={{ color: '#06b6d4', weight: 1.5, opacity: 0.3, dashArray: '6 8' }}
+            />
+          )}
+
+          <MapOverlays
+            fishingZones={FISHING_ZONES}
+            mpas={MARINE_PROTECTED_AREAS}
+            currents={OCEAN_CURRENTS}
+            dangerZones={DANGER_ZONES}
+            showFishing={overlays.fishing}
+            showMPA={overlays.mpa}
+            showCurrents={overlays.currents}
+            showDanger={overlays.danger}
+          />
         </MapContainer>
       </div>
 
+      <OverlayToggle overlays={overlays} onToggle={handleOverlayToggle} />
       <EventLog logs={state.logs} />
     </div>
   );

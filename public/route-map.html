@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ocean Wanderer v3.0 — 세계 일주 항로</title>
+<link rel="stylesheet" href="/leaflet.css"/>
+<script src="/leaflet.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0e1a; font-family: 'SF Mono', 'Consolas', monospace; }
+  #map { width: 100vw; height: 100vh; }
+  .info-panel {
+    position: fixed; top: 12px; left: 12px; z-index: 1000;
+    background: rgba(10,14,26,0.92); border: 1px solid rgba(34,211,238,0.2);
+    border-radius: 8px; padding: 16px 20px; backdrop-filter: blur(8px);
+    color: #a0c4e8; font-size: 12px; max-width: 320px;
+  }
+  .info-panel h1 { color: #22d3ee; font-size: 18px; margin-bottom: 4px; font-weight: 700; }
+  .info-panel .sub { color: #4a6a8a; font-size: 10px; margin-bottom: 12px; }
+  .info-panel .stat-row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid rgba(34,211,238,0.06); }
+  .info-panel .stat-row:last-child { border: none; }
+  .info-panel .stat-label { color: #4a6a8a; }
+  .info-panel .stat-value { color: #22d3ee; font-weight: 600; }
+  .legend-panel {
+    position: fixed; bottom: 12px; left: 12px; z-index: 1000;
+    background: rgba(10,14,26,0.92); border: 1px solid rgba(34,211,238,0.15);
+    border-radius: 6px; padding: 10px 14px; backdrop-filter: blur(8px);
+    display: flex; gap: 16px; font-size: 10px; color: #4a6a8a;
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .legend-line { width: 16px; height: 3px; border-radius: 2px; }
+  .wp-label {
+    background: rgba(10,14,26,0.85); border: 1px solid rgba(34,211,238,0.15);
+    border-radius: 4px; padding: 2px 6px; font-family: 'SF Mono','Consolas',monospace;
+    font-size: 9px; color: #6aa0cc; white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="info-panel">
+  <h1>🦈 OCEAN WANDERER v3.0</h1>
+  <div class="sub">실데이터 기반 글로벌 해양 일주 시뮬레이터</div>
+  <div class="stat-row"><span class="stat-label">총 거리</span><span class="stat-value">75,000 km</span></div>
+  <div class="stat-row"><span class="stat-label">웨이포인트</span><span class="stat-value">82 지점</span></div>
+  <div class="stat-row"><span class="stat-label">위도 범위</span><span class="stat-value">70°N — 67°S</span></div>
+  <div class="stat-row"><span class="stat-label">항해 구간</span><span class="stat-value">12 해역</span></div>
+  <div class="stat-row"><span class="stat-label">출발/도착</span><span class="stat-value">대만 해협 22°N 118°E</span></div>
+</div>
+
+<div class="legend-panel">
+  <div class="legend-item"><div class="legend-line" style="background:#22d3ee"></div> 항로</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fbbf24"></div> 출발/도착</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f97316"></div> 주요 경유지</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#64748b"></div> 웨이포인트</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div> 최남단 (남극)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div> 최북단 (북극권)</div>
+</div>
+
+<script>
+const ROUTE = [
+  [22,118],[18,114],[12,112],[7,108],
+  [2.5,104],[1.5,101.5],[3,97],[5,80],[4,73],
+  [-5,55],[-18,42],[-32,32],[-34.8,20],
+  [-34,18.5],[-33,14],[-25,5],[-16,-5],[-8,-14],[0,-22],
+  [15,-24],[28,-15],[36,-8],[44,-8],[50.5,-1],[56,3],[62,2],[66.5,-2],[70,-15],[65,-35],[58,-50],
+  [46,-48],[40,-60],[36,-72],[32,-65],[25,-77],[20,-86],[16,-62],
+  [10,-60],[5,-48],[-5,-35],[-23,-42],[-35,-52],[-42,-58],[-50,-62],
+  [-55.5,-66],[-56,-68],[-58,-63],[-62,-58],[-65,-64],[-67,-75],[-63,-85],
+  [-55,-80],[-45,-76],[-35,-74],[-25,-72],[-15,-76],[-5,-82],[0,-90],
+  [8,-100],[15,-120],[20,-155],[22,-158],[25,-168],[28,-178],[30,175],
+  [35,168],[42,165],[48,162],[54,160],[58,168],[55,172],[50,165],
+  [45,155],[42,148],[36,141],[34,140],[30,135],[28,130],[25,125],[22,118]
+];
+
+const REGIONS = [
+  '대만 해협','남중국해 북부','남중국해 중부','남중국해 남부',
+  '말라카 해협 동','말라카 해협 중앙','말라카 해협 서','스리랑카 남방','몰디브 해역',
+  '세이셸 해역','모잠비크 해협','아굴라스 해류','아굴라스 곶',
+  '희망봉','케이프타운 근해','벵겔라 해류','중남 대서양','어센션섬 해역','적도 대서양',
+  '카보베르데 해역','카나리아 제도','지브롤터 해협','비스케이만','영국 해협','북해','노르웨이해','북극권 해역','아이슬란드 북방','덴마크 해협','래브라도해',
+  '그랜드 뱅크스','노바스코샤 근해','걸프 스트림','버뮤다','바하마','멕시코만','카리브해',
+  '트리니다드 해역','아마존 하구','브라질 북동 연안','브라질 남동 (리우)','아르헨티나 연안','파타고니아 연안','포클랜드 해역',
+  '드레이크 해협 동','호른 곶','드레이크 해협','사우스셰틀랜드 제도','남극 반도','벨링스하우젠해','아문센해 접근',
+  '칠레 최남단','칠레 피오르드','칠레 중부 연안','아타카마 연안','페루 중부 연안','페루 북부 연안','갈라파고스 해역',
+  '동태평양','중부 태평양','하와이 남방','하와이 해역','북태평양','날짜변경선 접근','서태평양 외해',
+  '북서태평양','북태평양 서부','캄차카 남부','캄차카 반도','베링해','알류샨 열도','오호츠크해 접근',
+  '쿠릴 열도','홋카이도 근해','일본 동북 (센다이)','일본 중부 (도쿄)','쿠로시오 해류','동중국해','류큐 열도','출발지 귀환'
+];
+
+const KEY_INDICES = [0,4,8,10,13,17,21,24,27,30,33,36,39,45,48,51,57,61,64,68,71,75,78,80];
+
+window.routeMap = L.map('map', {
+  center: [10, 20],
+  zoom: 3,
+  zoomControl: false,
+  attributionControl: false,
+});
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  maxZoom: 18,
+  noWrap: false,
+}).addTo(routeMap);
+
+L.control.zoom({ position: 'topright' }).addTo(routeMap);
+
+// Split route at date line for clean rendering
+function splitRoute(coords) {
+  const segs = []; let cur = [];
+  for (let i = 0; i < coords.length; i++) {
+    if (i > 0) {
+      const diff = Math.abs(coords[i][1] - coords[i-1][1]);
+      if (diff > 180) { if (cur.length) segs.push(cur); cur = []; }
+    }
+    cur.push(coords[i]);
+  }
+  if (cur.length) segs.push(cur);
+  return segs;
+}
+
+const segments = splitRoute(ROUTE);
+
+// Glow layer (wider, translucent)
+segments.forEach(seg => {
+  L.polyline(seg, {
+    color: '#22d3ee', weight: 8, opacity: 0.12, lineCap: 'round', lineJoin: 'round',
+  }).addTo(routeMap);
+});
+
+// Main route line
+segments.forEach(seg => {
+  L.polyline(seg, {
+    color: '#22d3ee', weight: 2.5, opacity: 0.7, dashArray: '8 4',
+  }).addTo(routeMap);
+});
+
+// Direction arrows along route
+for (let i = 1; i < ROUTE.length; i++) {
+  if (Math.abs(ROUTE[i][1] - ROUTE[i-1][1]) > 180) continue;
+  if (i % 4 !== 0) continue;
+  const midLat = (ROUTE[i][0] + ROUTE[i-1][0]) / 2;
+  const midLng = (ROUTE[i][1] + ROUTE[i-1][1]) / 2;
+  const dx = ROUTE[i][1] - ROUTE[i-1][1];
+  const dy = ROUTE[i][0] - ROUTE[i-1][0];
+  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+  L.marker([midLat, midLng], {
+    icon: L.divIcon({
+      html: `<div style="font-size:10px;color:#22d3ee;opacity:0.4;transform:rotate(${-angle + 90}deg)">▼</div>`,
+      className: '', iconSize: [12,12], iconAnchor: [6,6],
+    }),
+    interactive: false,
+  }).addTo(routeMap);
+}
+
+// Waypoint markers
+ROUTE.forEach((coord, i) => {
+  const isStart = (i === 0);
+  const isEnd = (i === ROUTE.length - 1);
+  const isAntarctic = coord[0] <= -60;
+  const isArctic = coord[0] >= 65;
+  const isKey = KEY_INDICES.includes(i);
+
+  let color = '#475569';
+  let size = 4;
+  if (isStart || isEnd) { color = '#fbbf24'; size = 10; }
+  else if (isAntarctic) { color = '#ef4444'; size = 6; }
+  else if (isArctic) { color = '#a78bfa'; size = 6; }
+  else if (isKey) { color = '#f97316'; size = 6; }
+
+  const marker = L.circleMarker(coord, {
+    radius: size, color: color, fillColor: color, fillOpacity: 0.8, weight: 1,
+  }).addTo(routeMap);
+
+  const label = REGIONS[i] || '';
+  const coordStr = `${Math.abs(coord[0]).toFixed(1)}°${coord[0]>=0?'N':'S'} ${Math.abs(coord[1]).toFixed(1)}°${coord[1]>=0?'E':'W'}`;
+  marker.bindPopup(
+    `<div style="font-family:monospace;font-size:11px;color:#333">
+      <b style="color:#0e7490">${label}</b><br>
+      <span style="color:#666">WP ${String(i+1).padStart(2,'0')} / ${ROUTE.length}</span><br>
+      <span style="color:#0e7490">${coordStr}</span>
+    </div>`,
+    { className: '' }
+  );
+
+  // Permanent labels for key waypoints
+  if (isStart || isEnd || isKey || isAntarctic || isArctic) {
+    const tooltip = L.tooltip({
+      permanent: true, direction: 'right', offset: [8, 0],
+      className: 'wp-label',
+    }).setContent(label);
+    marker.bindTooltip(tooltip);
+  }
+});
+
+// Fit bounds with padding
+const bounds = L.latLngBounds(ROUTE);
+routeMap.fitBounds(bounds.pad(0.05));
+</script>
+</body>
+</html>

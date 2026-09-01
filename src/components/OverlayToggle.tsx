@@ -1,0 +1,46 @@
+import React from 'react';
+
+export interface OverlayState {
+  fishing: boolean;
+  mpa: boolean;
+  currents: boolean;
+  danger: boolean;
+  route: boolean;
+}
+
+interface OverlayToggleProps {
+  overlays: OverlayState;
+  onToggle: (key: keyof OverlayState) => void;
+}
+
+const ITEMS: { key: keyof OverlayState; icon: string; label: string; color: string }[] = [
+  { key: 'route', icon: '🗺️', label: '항로', color: 'text-cyan-400' },
+  { key: 'fishing', icon: '🚢', label: '어업', color: 'text-orange-400' },
+  { key: 'mpa', icon: '🏝️', label: 'MPA', color: 'text-green-400' },
+  { key: 'currents', icon: '🌊', label: '해류', color: 'text-indigo-400' },
+  { key: 'danger', icon: '⚠️', label: '위험', color: 'text-red-400' },
+];
+
+export const OverlayToggle: React.FC<OverlayToggleProps> = ({ overlays, onToggle }) => {
+  return (
+    <div className="absolute bottom-40 right-3 z-[1000] bg-gray-900/95 rounded-lg border border-gray-700/60 backdrop-blur-sm p-2">
+      <span className="text-[9px] text-gray-500 uppercase tracking-widest px-1">레이어</span>
+      <div className="flex flex-col gap-0.5 mt-1">
+        {ITEMS.map(item => (
+          <button
+            key={item.key}
+            onClick={() => onToggle(item.key)}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] transition-all ${
+              overlays[item.key]
+                ? `${item.color} bg-gray-800`
+                : 'text-gray-600 hover:text-gray-400'
+            }`}
+          >
+            <span>{item.icon}</span>
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
