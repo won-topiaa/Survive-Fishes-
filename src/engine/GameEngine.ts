@@ -1,5 +1,6 @@
 import type { GameState, LogEntry, DangerEvent, Gravesite } from '../types/game';
-import type { SpeciesConfig, DepthLayer } from '../types/fish';
+import type { SpeciesConfig, DepthLayer, SpeciesTier } from '../types/fish';
+import type { FishingZone, MarineProtectedArea } from '../data/types';
 import { WORLD_TOUR_ROUTE, ROUTE_TOTAL_DISTANCE_KM } from '../data/oceanRoutes';
 import { OCEAN_CURRENTS } from '../data/currents';
 import { FISHING_ZONES } from '../data/fishingZones';
@@ -28,6 +29,30 @@ function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+// Interpolates longitude the short way around the ±180° antimeridian.
+function lerpLng(a: number, b: number, t: number): number {
+  const diff = (((b - a + 540) % 360) + 360) % 360 - 180;
+  return (((a + diff * t + 540) % 360) + 360) % 360 - 180;
+}
+
+function samplePath(from: [number, number], to: [number, number], steps = 8): [number, number][] {
+  const points: [number, number][] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    points.push([lerp(from[0], to[0], t), lerpLng(from[1], to[1], t)]);
+  }
+  return points;
+}
+
+function minDistanceToPoint(path: [number, number][], target: [number, number]): number {
+  let min = Infinity;
+  for (const p of path) {
+    const d = haversineKm(p, target);
+    if (d < min) min = d;
+  }
+  return min;
+}
+
 const SAMPLE_GRAVESITES: Gravesite[] = [
   { id: 'g1', coord: [35.2, 129.8], species: '고등어', nickname: '참치장인', causeOfDeath: '동해 정치망 어선단 진입', diedAt: '2024-03-15', distanceTraveled: 12400 },
   { id: 'g2', coord: [25.0, -80.5], species: '날치', nickname: 'SpeedRunner', causeOfDeath: '카리브해 바라쿠다 포식', diedAt: '2024-03-18', distanceTraveled: 31200 },
@@ -36,7 +61,7 @@ const SAMPLE_GRAVESITES: Gravesite[] = [
   { id: 'g5', coord: [45.3, -50.0], species: '황새치', nickname: 'SwordMaster', causeOfDeath: '그랜드 뱅크스 연승선 주낙', diedAt: '2024-03-25', distanceTraveled: 22000 },
   { id: 'g6', coord: [-56.0, -66.0], species: '참다랑어', nickname: '드레이크의꿈', causeOfDeath: '드레이크 해협 폭풍 (풍속 50m/s)', diedAt: '2024-04-01', distanceTraveled: 38000 },
   { id: 'g7', coord: [18.0, 135.0], species: '가시복', nickname: 'PufferKing', causeOfDeath: '서태평양 태풍 (카테고리 5)', diedAt: '2024-04-05', distanceTraveled: 4200 },
-  { id: 'g8', coord: [-12.0, -78.0], species: '고등어', nickname: 'Anchoa', causeOfDeath: '페루 연안 선망 어선단 (멸치잡이)', diedAt: '2024-04-10', distanceTraveled: 35000 },
+  { id: 'g8', coord: [-12.0, -78.0], species: '멸치', nickname: 'Anchoa', causeOfDeath: '페루 연안 선망 어선단 (멸치잡이)', diedAt: '2024-04-10', distanceTraveled: 35000 },
 ];
 
 function createInitialState(): GameState {
@@ -81,6 +106,7 @@ export class OceanEngine {
   private lastRegionLog = '';
   private lastCurrentLog = '';
   private lastZoneLog = '';
+  private voyageStartMonth = 1;
 
   constructor() {
     this.state = createInitialState();
@@ -112,6 +138,7 @@ export class OceanEngine {
     this.waypointIndex = this.findNearestWaypoint(lat, lng);
     this.waypointT = 0;
     this.nextDangerCheck = 30 + Math.random() * 60;
+    this.voyageStartMonth = new Date().getMonth() + 1;
 
     const realData = SPECIES_REAL_DATA[species.id];
     const wp = WORLD_TOUR_ROUTE[this.waypointIndex];
@@ -250,44 +277,85 @@ export class OceanEngine {
     return maxBoost;
   }
 
-  private isInMPA(): boolean {
+  // Pure lookup: closest MPA whose radius the path enters, or null. No side effects.
+  private findMPA(path: [number, number][]): MarineProtectedArea | null {
+    let closest: MarineProtectedArea | null = null;
+    let closestDist = Infinity;
     for (const mpa of MARINE_PROTECTED_AREAS) {
-      const d = haversineKm(this.state.currentCoord, mpa.center);
-      if (d < mpa.radiusKm) {
-        const logKey = mpa.id;
-        if (this.lastZoneLog !== logKey) {
-          this.lastZoneLog = logKey;
-          this.addLog(`🏝️ ${mpa.nameKo} 진입 (해양보호구역, 어업 위험 0%)`, 'success');
-        }
-        return true;
+      const d = minDistanceToPoint(path, mpa.center);
+      if (d < mpa.radiusKm && d < closestDist) {
+        closest = mpa;
+        closestDist = d;
       }
     }
-    return false;
+    return closest;
   }
 
-  private getFishingIntensity(): number {
-    if (this.isInMPA()) return 0;
-    if (this.state.depth === 'ABYSS') return 0;
+  private logMPAEntry(mpa: MarineProtectedArea) {
+    if (this.lastZoneLog === mpa.id) return;
+    this.lastZoneLog = mpa.id;
+    const riskLabel = mpa.protection === 'FULL' ? '어업 위험 0%' : '어업 위험 50% 감소';
+    this.addLog(`🏝️ ${mpa.nameKo} 진입 (해양보호구역, ${riskLabel})`, 'success');
+  }
+
+  private getFishingIntensity(path: [number, number][]): { intensity: number; zone: FishingZone | null } {
+    const mpa = this.findMPA(path);
+    if (mpa) {
+      this.logMPAEntry(mpa);
+      if (mpa.protection === 'FULL') return { intensity: 0, zone: null };
+    }
+    if (this.state.depth === 'ABYSS') return { intensity: 0, zone: null };
+
     let maxIntensity = 0;
+    let bestZone: FishingZone | null = null;
     for (const zone of FISHING_ZONES) {
-      const d = haversineKm(this.state.currentCoord, zone.center);
+      const d = minDistanceToPoint(path, zone.center);
       if (d < zone.radiusKm) {
         const proximity = 1 - d / zone.radiusKm;
         const intensity = zone.intensity * proximity;
-        if (intensity > maxIntensity) maxIntensity = intensity;
+        if (intensity > maxIntensity) { maxIntensity = intensity; bestZone = zone; }
       }
     }
-    return maxIntensity;
+    if (mpa?.protection === 'PARTIAL') maxIntensity *= 0.5;
+    return { intensity: maxIntensity, zone: bestZone };
   }
 
-  private getDangerLevel(): { level: number; source: DangerEvent | null } {
-    const pos = this.state.currentCoord;
-    const month = new Date().getMonth() + 1;
+  private getSimulatedMonth(): number {
+    const daysElapsed = this.state.elapsedSeconds / 86400;
+    const monthsElapsed = Math.floor(daysElapsed / 30);
+    return ((this.voyageStartMonth - 1 + monthsElapsed) % 12) + 1;
+  }
+
+  private getPredatorDanger(): { level: number; source: DangerEvent | null } {
+    if (!this.state.species) return { level: 0, source: null };
+    const predators = SPECIES_REAL_DATA[this.state.species.id]?.naturalPredators ?? [];
+    const hasPredators = predators.length > 0 && !predators.some(p => p.includes('없음'));
+    if (!hasPredators) return { level: 0, source: null };
+
+    const tierRisk: Record<SpeciesTier, number> = { SMALL: 0.40, MEDIUM: 0.22, LARGE: 0.10, APEX: 0.03 };
+    const depthMultiplier = this.state.depth === 'SURFACE' ? 1.5 : this.state.depth === 'ABYSS' ? 0.5 : 1.0;
+    const level = tierRisk[this.state.species.tier] * depthMultiplier;
+    const predatorName = predators[Math.floor(Math.random() * predators.length)];
+
+    return {
+      level,
+      source: {
+        type: 'PREDATOR',
+        name: `${predatorName} 접근`,
+        severity: level,
+        coord: [...this.state.currentCoord],
+        radius: 50,
+      },
+    };
+  }
+
+  private getDangerLevel(path: [number, number][]): { level: number; source: DangerEvent | null } {
+    const month = this.getSimulatedMonth();
     let maxDanger = 0;
     let source: DangerEvent | null = null;
 
     for (const zone of DANGER_ZONES) {
-      const d = haversineKm(pos, zone.center);
+      const d = minDistanceToPoint(path, zone.center);
       if (d < zone.radiusKm) {
         const proximity = 1 - d / zone.radiusKm;
         let danger = zone.baseDanger * proximity;
@@ -295,7 +363,7 @@ export class OceanEngine {
         if (danger > maxDanger) {
           maxDanger = danger;
           source = {
-            type: zone.type === 'STORM_CORRIDOR' ? 'STORM' : zone.type === 'DEAD_ZONE' ? 'DEAD_ZONE' : 'FISHING',
+            type: zone.type === 'STORM_CORRIDOR' ? 'STORM' : zone.type === 'DEAD_ZONE' ? 'DEAD_ZONE' : 'HIGH_RISK',
             name: zone.nameKo,
             severity: danger,
             coord: zone.center,
@@ -305,20 +373,22 @@ export class OceanEngine {
       }
     }
 
-    const fishIntensity = this.getFishingIntensity();
-    if (fishIntensity > maxDanger && this.state.depth !== 'ABYSS') {
-      maxDanger = fishIntensity;
-      const nearestZone = FISHING_ZONES.reduce((best, z) => {
-        const d = haversineKm(pos, z.center);
-        return d < haversineKm(pos, best.center) ? z : best;
-      });
+    const fishing = this.getFishingIntensity(path);
+    if (fishing.intensity > maxDanger && fishing.zone) {
+      maxDanger = fishing.intensity;
       source = {
         type: 'FISHING',
-        name: `${nearestZone.nameKo} 어선단 (${nearestZone.gearTypes[0]})`,
-        severity: fishIntensity,
-        coord: nearestZone.center,
-        radius: nearestZone.radiusKm,
+        name: `${fishing.zone.nameKo} 어선단 (${fishing.zone.gearTypes[0]})`,
+        severity: fishing.intensity,
+        coord: fishing.zone.center,
+        radius: fishing.zone.radiusKm,
       };
+    }
+
+    const predator = this.getPredatorDanger();
+    if (predator.level > maxDanger && predator.source) {
+      maxDanger = predator.level;
+      source = predator.source;
     }
 
     return { level: maxDanger, source };
@@ -393,6 +463,7 @@ export class OceanEngine {
 
       const dt = this.state.simSpeed;
       this.state.elapsedSeconds += dt;
+      const prevCoord: [number, number] = [...this.state.currentCoord];
 
       // Waypoint-based navigation
       const speed = this.getEffectiveSpeed();
@@ -421,7 +492,8 @@ export class OceanEngine {
       const curFrom = WORLD_TOUR_ROUTE[Math.min(this.waypointIndex, routeLen - 1)].coord;
       const curTo = WORLD_TOUR_ROUTE[Math.min(this.waypointIndex + 1, routeLen - 1)].coord;
       const t = Math.max(0, Math.min(1, this.waypointT));
-      this.state.currentCoord = [lerp(curFrom[0], curTo[0], t), lerp(curFrom[1], curTo[1], t)];
+      this.state.currentCoord = [lerp(curFrom[0], curTo[0], t), lerpLng(curFrom[1], curTo[1], t)];
+      const tickPath = samplePath(prevCoord, this.state.currentCoord);
 
       if (this.state.elapsedSeconds % Math.max(5, 30 / this.state.simSpeed) < dt || this.state.pathHistory.length === 0) {
         this.state.pathHistory.push([...this.state.currentCoord]);
@@ -445,7 +517,7 @@ export class OceanEngine {
 
       // Geographic danger evaluation
       if (this.state.elapsedSeconds >= this.nextDangerCheck && !this.state.isSleepModeActive) {
-        const { level, source } = this.getDangerLevel();
+        const { level, source } = this.getDangerLevel(tickPath);
         const triggerThreshold = 0.35 - (this.state.species?.tier === 'SMALL' ? 0.15 : this.state.species?.tier === 'APEX' ? -0.15 : 0);
 
         if (level > triggerThreshold && source && Math.random() < level * 0.6) {

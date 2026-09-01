@@ -19,6 +19,7 @@ export const DangerAlertModal: React.FC<DangerAlertModalProps> = ({ state }) => 
     PREDATOR: { icon: '🦈', color: 'text-red-400' },
     STORM: { icon: '🌀', color: 'text-purple-400' },
     DEAD_ZONE: { icon: '☠️', color: 'text-green-400' },
+    HIGH_RISK: { icon: '⚓', color: 'text-amber-400' },
   };
 
   const info = typeInfo[state.currentDanger.type] || { icon: '⚠️', color: 'text-red-400' };

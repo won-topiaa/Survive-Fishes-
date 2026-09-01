@@ -15,7 +15,9 @@ import { OverlayToggle } from './components/OverlayToggle';
 import type { OverlayState } from './components/OverlayToggle';
 import type { GameState } from './types/game';
 import type { SpeciesConfig } from './types/fish';
-import { WORLD_TOUR_ROUTE, OCEAN_CURRENTS, FISHING_ZONES, MARINE_PROTECTED_AREAS, DANGER_ZONES } from './data';
+import { OCEAN_CURRENTS, FISHING_ZONES, MARINE_PROTECTED_AREAS, DANGER_ZONES, getRouteSegments } from './data';
+
+const ROUTE_SEGMENTS = getRouteSegments();
 
 const fishIcon = (emoji: string) =>
   L.divIcon({
@@ -260,12 +262,13 @@ const App: React.FC = () => {
             />
           )}
 
-          {overlays.route && (
+          {overlays.route && ROUTE_SEGMENTS.map((segment, i) => (
             <Polyline
-              positions={WORLD_TOUR_ROUTE.map(w => w.coord)}
+              key={`route-segment-${i}`}
+              positions={segment}
               pathOptions={{ color: '#06b6d4', weight: 1.5, opacity: 0.3, dashArray: '6 8' }}
             />
-          )}
+          ))}
 
           <MapOverlays
             fishingZones={FISHING_ZONES}

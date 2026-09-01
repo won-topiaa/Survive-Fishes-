@@ -11,7 +11,7 @@ export interface Gravesite {
 }
 
 export interface DangerEvent {
-  type: 'FISHING' | 'PREDATOR' | 'STORM' | 'DEAD_ZONE';
+  type: 'FISHING' | 'PREDATOR' | 'STORM' | 'DEAD_ZONE' | 'HIGH_RISK';
   name: string;
   severity: number;
   coord: [number, number];

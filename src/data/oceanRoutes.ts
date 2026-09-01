@@ -106,7 +106,8 @@ export const WORLD_TOUR_ROUTE: RouteWaypoint[] = [
   { coord: [22.0, 118.0], name: 'Return to Start', region: '출발지 귀환' },
 ];
 
-export const ROUTE_TOTAL_DISTANCE_KM = 75_000;
+// Sum of haversine distances between consecutive waypoints above (~81,474km actual).
+export const ROUTE_TOTAL_DISTANCE_KM = 81_500;
 
 export function getRouteSegments(): [number, number][][] {
   const segments: [number, number][][] = [];
