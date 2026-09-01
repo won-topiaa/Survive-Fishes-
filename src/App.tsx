@@ -137,7 +137,7 @@ const App: React.FC = () => {
             <h1 className="text-3xl text-cyan-400 font-bold mb-2 tracking-wider">OCEAN WANDERER</h1>
             <p className="text-gray-500 text-xs mb-1">v3.0 — 실데이터 기반 글로벌 해양 일주 시뮬레이터</p>
             <p className="text-gray-400 text-sm mb-6 mt-3">
-              전 세계 바다 50,000km를 일주하세요.<br/>
+              전 세계 바다 75,000km를 일주하세요.<br/>
               어종을 선택하고, 출발지를 찍어 항해를 시작합니다.
             </p>
             <button
