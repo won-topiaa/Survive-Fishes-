@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents, CircleMarker } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { engine } from './engine/GameEngine';
@@ -16,9 +16,16 @@ import type { OverlayState } from './components/OverlayToggle';
 import { PixelWorldMap } from './components/PixelWorldMap';
 import { DangerBanner } from './components/DangerBanner';
 import { DangerScreenEffect } from './components/DangerScreenEffect';
+import { Minimap } from './components/Minimap';
+import type { MinimapViewport } from './components/Minimap';
+import { AtmosphereLayer } from './components/AtmosphereLayer';
+import { EnvironmentBar } from './components/EnvironmentBar';
 import type { GameState } from './types/game';
 import type { SpeciesConfig } from './types/fish';
-import { OCEAN_CURRENTS, FISHING_ZONES, MARINE_PROTECTED_AREAS, DANGER_ZONES, ROUTE_TOTAL_DISTANCE_KM, getRouteSegments } from './data';
+import {
+  OCEAN_CURRENTS, FISHING_ZONES, MARINE_PROTECTED_AREAS, DANGER_ZONES, FEEDING_GROUNDS,
+  ROUTE_TOTAL_DISTANCE_KM, getRouteSegments,
+} from './data';
 import { splitAtAntimeridian } from './utils/geo';
 import { formatKm } from './utils/format';
 
@@ -58,13 +65,19 @@ function SpawnClickHandler({ onSpawn }: { onSpawn: (lat: number, lng: number) =>
 
 // Keeps the fish in view without fighting the user: a drag or zoom pauses the
 // auto-follow for a while, and otherwise the map only re-centres once the fish
-// drifts out of the central part of the viewport.
-function MapUpdater({ coord }: { coord: [number, number] }) {
+// drifts out of the central part of the viewport. `pauseSignal` lets the
+// minimap join in: a positive timestamp pauses from that moment, a negative
+// one (the recenter button) lifts the pause.
+function MapUpdater({ coord, pauseSignal }: { coord: [number, number]; pauseSignal: number }) {
   const pausedUntil = useRef(0);
   const map = useMapEvents({
     dragstart() { pausedUntil.current = Date.now() + FOLLOW_PAUSE_MS; },
     zoomstart() { pausedUntil.current = Date.now() + FOLLOW_PAUSE_MS; },
   });
+  // Declared before the follow effect so a fresh pause is seen in the same commit.
+  useEffect(() => {
+    pausedUntil.current = pauseSignal > 0 ? pauseSignal + FOLLOW_PAUSE_MS : 0;
+  }, [pauseSignal]);
   useEffect(() => {
     if (coord[0] === 0 && coord[1] === 0) return;
     if (Date.now() < pausedUntil.current) return;
@@ -74,10 +87,28 @@ function MapUpdater({ coord }: { coord: [number, number] }) {
   return null;
 }
 
+// Lifts the main map's bounds out to React so the minimap can draw them.
+function ViewportTracker({ onChange }: { onChange: (viewport: MinimapViewport) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    const report = () => {
+      const b = map.getBounds();
+      onChange({ north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() });
+    };
+    report();
+    map.on('moveend zoomend resize', report);
+    return () => { map.off('moveend zoomend resize', report); };
+  }, [map, onChange]);
+  return null;
+}
+
 const App: React.FC = () => {
   const [state, setState] = useState<GameState>(engine.state);
   const [pendingCoord, setPendingCoord] = useState<[number, number] | null>(null);
   const [waitingForPin, setWaitingForPin] = useState(false);
+  const [viewport, setViewport] = useState<MinimapViewport | null>(null);
+  const [followPause, setFollowPause] = useState(0);
+  const mapRef = useRef<L.Map | null>(null);
   const [overlays, setOverlays] = useState<OverlayState>({
     fishing: false,
     mpa: false,
@@ -85,6 +116,7 @@ const App: React.FC = () => {
     danger: true,
     route: true,
     pixelMap: true,
+    food: true,
   });
 
   const handleOverlayToggle = useCallback((key: keyof OverlayState) => {
@@ -136,10 +168,38 @@ const App: React.FC = () => {
     setState({ ...engine.state });
   }, []);
 
+  const handleMinimapNavigate = useCallback((lat: number, lng: number) => {
+    mapRef.current?.panTo([lat, lng], { animate: true, duration: 0.6 });
+    setFollowPause(Date.now());
+  }, []);
+
+  const handleRecenter = useCallback(() => {
+    mapRef.current?.panTo(engine.state.currentCoord, { animate: true, duration: 0.6 });
+    setFollowPause(-Date.now());
+  }, []);
+
+  const inVoyage = state.phase !== 'MENU' && state.phase !== 'SPECIES_SELECT';
+  const underway = state.phase === 'PLAYING' || state.phase === 'DANGER_ALERT';
+
   return (
     <div className="w-full h-screen relative bg-black font-mono">
-      <HUD state={state} />
+      {inVoyage && (
+        <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-2 w-72 max-h-[calc(100vh-10.5rem)] overflow-y-auto scrollbar-thin">
+          <HUD state={state} />
+          <Minimap
+            coord={state.currentCoord}
+            trailSegments={trailSegments}
+            routeSegments={ROUTE_SEGMENTS}
+            gravesites={state.gravesites}
+            currentDanger={state.currentDanger}
+            viewport={viewport}
+            onNavigate={handleMinimapNavigate}
+            onRecenter={handleRecenter}
+          />
+        </div>
+      )}
       <ControlPanel state={state} />
+      <EnvironmentBar state={state} />
 
       {state.phase === 'SPECIES_SELECT' && (
         <SpeciesSelectModal
@@ -214,6 +274,7 @@ const App: React.FC = () => {
 
       <div className="absolute inset-0 z-0">
         <MapContainer
+          ref={mapRef}
           center={[20, 0]}
           zoom={3}
           style={{ height: '100%', width: '100%', background: '#0a0e1a' }}
@@ -226,13 +287,14 @@ const App: React.FC = () => {
           />
 
           <PixelWorldMap visible={overlays.pixelMap} />
+          <ViewportTracker onChange={setViewport} />
 
           {(waitingForPin || state.phase === 'MENU') && (
             <SpawnClickHandler onSpawn={handleMapSpawn} />
           )}
 
-          {state.phase !== 'MENU' && state.phase !== 'SPECIES_SELECT' && (
-            <MapUpdater coord={state.currentCoord} />
+          {inVoyage && (
+            <MapUpdater coord={state.currentCoord} pauseSignal={followPause} />
           )}
 
           {pendingCoord && (
@@ -247,7 +309,7 @@ const App: React.FC = () => {
             </CircleMarker>
           )}
 
-          {state.phase !== 'MENU' && state.phase !== 'SPECIES_SELECT' && (
+          {inVoyage && (
             <Marker position={state.currentCoord} icon={fishIcon(state.species?.emoji || '🐟')}>
               <Popup>
                 {state.species?.emoji} {state.species?.nameKo}<br />
@@ -267,12 +329,12 @@ const App: React.FC = () => {
           {state.gravesites.map(g => (
             <Marker key={g.id} position={g.coord} icon={skullIcon}>
               <Popup>
-                <div style={{ fontFamily: 'monospace', fontSize: '11px', color: '#333' }}>
+                <div style={{ fontFamily: 'monospace', fontSize: '11px', color: '#cbd5e1' }}>
                   <strong>💀 {g.nickname}</strong><br />
                   어종: {g.species}<br />
                   사인: {g.causeOfDeath}<br />
                   항해: {formatKm(g.distanceTraveled)}km<br />
-                  <span style={{ color: '#999' }}>{g.diedAt}</span>
+                  <span style={{ color: '#94a3b8' }}>{g.diedAt}</span>
                 </div>
               </Popup>
             </Marker>
@@ -305,13 +367,23 @@ const App: React.FC = () => {
             mpas={MARINE_PROTECTED_AREAS}
             currents={OCEAN_CURRENTS}
             dangerZones={DANGER_ZONES}
+            feedingGrounds={FEEDING_GROUNDS}
             showFishing={overlays.fishing}
             showMPA={overlays.mpa}
             showCurrents={overlays.currents}
             showDanger={overlays.danger}
+            showFood={overlays.food}
           />
         </MapContainer>
       </div>
+
+      {/* Above the map, below every panel: night, sleeping, storm, dead zone. */}
+      <AtmosphereLayer
+        simHour={state.simHour}
+        hazard={state.nearbyHazard}
+        isSleeping={state.isSleeping}
+        active={underway}
+      />
 
       <OverlayToggle overlays={overlays} onToggle={handleOverlayToggle} />
       <EventLog logs={state.logs} />

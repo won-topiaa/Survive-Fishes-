@@ -1,11 +1,34 @@
 import React from 'react';
-import { engine } from '../engine/GameEngine';
+import { engine, HUNT_GAIN, HUNT_MIN_DENSITY } from '../engine/GameEngine';
 import type { GameState } from '../types/game';
 import type { DepthLayer } from '../types/fish';
 import { formatCooldown } from '../utils/format';
 
 interface ControlPanelProps {
   state: GameState;
+}
+
+const DISABLED_CLASS = 'bg-gray-900 border-gray-700 text-gray-500 cursor-not-allowed';
+
+function huntButton(state: GameState): { label: string; className: string; disabled: boolean } {
+  if (state.isFeeding) {
+    return {
+      label: `🍽️ 사냥 중 ${formatCooldown(state.feedingRemainingSeconds)}`,
+      className: 'bg-emerald-900/60 border-emerald-400 text-emerald-300 animate-pulse motion-reduce:animate-none',
+      disabled: true,
+    };
+  }
+  if (state.huntCooldownRemaining > 0) {
+    return { label: `🍽️ 사냥 쿨다운 ${formatCooldown(state.huntCooldownRemaining)}`, className: DISABLED_CLASS, disabled: true };
+  }
+  const density = state.food.density;
+  if (density < 0.05) return { label: '🍽️ 먹이 없음', className: DISABLED_CLASS, disabled: true };
+  if (density < HUNT_MIN_DENSITY) return { label: '🍽️ 먹이 희박', className: DISABLED_CLASS, disabled: true };
+  return {
+    label: `🍽️ 먹이 사냥 (+${Math.round(HUNT_GAIN * density)}%)`,
+    className: 'bg-emerald-900/80 border-emerald-500 text-emerald-300 hover:bg-emerald-800 shadow-[0_0_12px_rgba(52,211,153,0.25)]',
+    disabled: false,
+  };
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({ state }) => {
@@ -18,6 +41,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ state }) => {
   ];
 
   const skill = state.species?.activeSkill;
+  const hunt = huntButton(state);
 
   return (
     <div className="absolute top-3 right-3 z-[1000] flex flex-col gap-2 w-52">
@@ -45,7 +69,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ state }) => {
         disabled={state.boostCooldownRemaining > 0}
         className={`py-2.5 px-3 rounded-lg border text-sm font-bold transition-all ${
           state.boostCooldownRemaining > 0
-            ? 'bg-gray-900 border-gray-700 text-gray-500 cursor-not-allowed'
+            ? DISABLED_CLASS
             : 'bg-yellow-900/80 border-yellow-500 text-yellow-300 hover:bg-yellow-800 shadow-[0_0_15px_rgba(234,179,8,0.3)]'
         }`}
       >
@@ -54,15 +78,23 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ state }) => {
           : '🚀 2x 터보 부스트'}
       </button>
 
+      <button
+        onClick={() => engine.hunt()}
+        disabled={hunt.disabled}
+        className={`py-1.5 px-3 rounded-lg border text-xs font-bold transition-all ${hunt.className}`}
+      >
+        {hunt.label}
+      </button>
+
       {skill && (
         <button
           onClick={() => engine.activateSkill()}
           disabled={state.skillCooldownRemaining > 0 || state.isSkillActive}
           className={`py-2 px-3 rounded-lg border text-xs font-bold transition-all ${
             state.isSkillActive
-              ? 'bg-purple-900/60 border-purple-400 text-purple-300 animate-pulse'
+              ? 'bg-purple-900/60 border-purple-400 text-purple-300 animate-pulse motion-reduce:animate-none'
               : state.skillCooldownRemaining > 0
-                ? 'bg-gray-900 border-gray-700 text-gray-500 cursor-not-allowed'
+                ? DISABLED_CLASS
                 : 'bg-purple-900/80 border-purple-500 text-purple-300 hover:bg-purple-800'
           }`}
         >

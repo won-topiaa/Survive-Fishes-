@@ -66,6 +66,11 @@ export const SpeciesSelectModal: React.FC<SpeciesSelectModalProps> = ({ onSelect
                           ✨ {sp.activeSkill.nameKo}: {sp.activeSkill.description}
                         </div>
                       )}
+                      {sp.passiveTrait && (
+                        <div className="mt-1 text-[10px] text-cyan-400">
+                          🧬 {sp.passiveTrait.nameKo}: {sp.passiveTrait.description}
+                        </div>
+                      )}
                     </button>
                   ))}
                 </div>

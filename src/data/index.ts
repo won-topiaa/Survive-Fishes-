@@ -3,4 +3,5 @@ export { OCEAN_CURRENTS } from './currents';
 export { FISHING_ZONES } from './fishingZones';
 export { MARINE_PROTECTED_AREAS } from './marineProtectedAreas';
 export { DANGER_ZONES } from './dangerZones';
+export { FEEDING_GROUNDS } from './feedingGrounds';
 export { SPECIES_REAL_DATA } from './speciesData';

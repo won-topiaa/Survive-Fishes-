@@ -1,24 +1,49 @@
 import React from 'react';
 import { Circle, Polyline, Tooltip } from 'react-leaflet';
-import type { FishingZone, MarineProtectedArea, OceanCurrent, DangerZone } from '../data/types';
+import type { FishingZone, MarineProtectedArea, OceanCurrent, DangerZone, FeedingGround } from '../data/types';
 
 interface MapOverlaysProps {
   fishingZones: FishingZone[];
   mpas: MarineProtectedArea[];
   currents: OceanCurrent[];
   dangerZones: DangerZone[];
+  feedingGrounds: FeedingGround[];
   showFishing: boolean;
   showMPA: boolean;
   showCurrents: boolean;
   showDanger: boolean;
+  showFood: boolean;
 }
 
 export const MapOverlays: React.FC<MapOverlaysProps> = React.memo(({
-  fishingZones, mpas, currents, dangerZones,
-  showFishing, showMPA, showCurrents, showDanger,
+  fishingZones, mpas, currents, dangerZones, feedingGrounds,
+  showFishing, showMPA, showCurrents, showDanger, showFood,
 }) => {
   return (
     <>
+      {showFood && feedingGrounds.map(ground => (
+        <Circle
+          key={ground.id}
+          center={ground.center}
+          radius={ground.radiusKm * 1000}
+          pathOptions={{
+            color: '#f472b6',
+            fillColor: '#f472b6',
+            fillOpacity: 0.04 + ground.richness * 0.08,
+            weight: 1,
+            dashArray: '2 4',
+          }}
+        >
+          <Tooltip direction="top" opacity={0.9}>
+            <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>
+              🦐 {ground.nameKo}<br />
+              먹이: {ground.prey}<br />
+              풍부도: {(ground.richness * 100).toFixed(0)}%
+            </span>
+          </Tooltip>
+        </Circle>
+      ))}
+
       {showFishing && fishingZones.map(zone => (
         <Circle
           key={zone.id}

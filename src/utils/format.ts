@@ -21,6 +21,21 @@ export function formatKm(km: number): string {
   return Math.floor(km).toLocaleString();
 }
 
+/** Fractional hour (0..24) as "HH:MM", e.g. 22.75 → "22:45". */
+export function formatClock(hour: number): string {
+  const total = Math.floor(((hour % 24) + 24) % 24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/** 🌅 dawn, ☀️ day, 🌇 dusk, 🌙 night for a simulated hour. */
+export function clockIcon(hour: number): string {
+  const h = ((hour % 24) + 24) % 24;
+  if (h >= 5 && h < 7) return '🌅';
+  if (h >= 7 && h < 18) return '☀️';
+  if (h >= 18 && h < 20) return '🌇';
+  return '🌙';
+}
+
 /** "23:00~07:00" */
 export function formatSleepWindow(startHour: number, endHour: number): string {
   const pad = (h: number) => String(h).padStart(2, '0');
