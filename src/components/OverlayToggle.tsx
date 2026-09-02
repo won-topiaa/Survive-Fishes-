@@ -6,6 +6,7 @@ export interface OverlayState {
   currents: boolean;
   danger: boolean;
   route: boolean;
+  pixelMap: boolean;
 }
 
 interface OverlayToggleProps {
@@ -14,6 +15,7 @@ interface OverlayToggleProps {
 }
 
 const ITEMS: { key: keyof OverlayState; icon: string; label: string; color: string }[] = [
+  { key: 'pixelMap', icon: '🌐', label: '지형', color: 'text-slate-300' },
   { key: 'route', icon: '🗺️', label: '항로', color: 'text-cyan-400' },
   { key: 'fishing', icon: '🚢', label: '어업', color: 'text-orange-400' },
   { key: 'mpa', icon: '🏝️', label: 'MPA', color: 'text-green-400' },
