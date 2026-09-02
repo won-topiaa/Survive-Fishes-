@@ -96,7 +96,8 @@ export const WORLD_GRID: string[] = [
 ];
 
 export function isLand(lat: number, lng: number): boolean {
-  const row = Math.floor((90 - lat) / GRID_RESOLUTION);
+  // lat = -90 exactly would fall one row past the end; keep it in the last band.
+  const row = Math.min(WORLD_GRID.length - 1, Math.floor((90 - lat) / GRID_RESOLUTION));
   const normLng = ((lng % 360) + 540) % 360 - 180;
   const col = Math.floor((normLng + 180) / GRID_RESOLUTION);
   if (row < 0 || row >= WORLD_GRID.length || col < 0 || col >= WORLD_GRID[0].length) return false;
