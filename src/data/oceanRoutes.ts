@@ -1,4 +1,6 @@
 import type { RouteWaypoint } from './types';
+import type { LatLng } from '../utils/geo';
+import { buildMercatorArcTable, splitAtAntimeridian } from '../utils/geo';
 
 export const WORLD_TOUR_ROUTE: RouteWaypoint[] = [
   // === 1. 서태평양 출발 (대만 해협) ===
@@ -103,28 +105,23 @@ export const WORLD_TOUR_ROUTE: RouteWaypoint[] = [
   { coord: [30.0, 135.0], name: 'Kuroshio Current', region: '쿠로시오 해류' },
   { coord: [28.0, 130.0], name: 'East China Sea', region: '동중국해' },
   { coord: [25.0, 125.0], name: 'Ryukyu Islands', region: '류큐 열도' },
-  { coord: [22.0, 118.0], name: 'Return to Start', region: '출발지 귀환' },
+  // The loop closes back onto Taiwan Strait (waypoint 0); the engine wraps
+  // (i + 1) % length, so the origin is not repeated here.
 ];
 
-// Sum of haversine distances between consecutive waypoints above (~81,474km actual).
-export const ROUTE_TOTAL_DISTANCE_KM = 81_500;
+// One arc table per leg, following the straight Mercator line the map draws
+// between waypoint i and waypoint (i + 1) % length. Built once and shared by the
+// engine (movement) and the total below (win condition) so they cannot diverge.
+export const ROUTE_LEG_TABLES = WORLD_TOUR_ROUTE.map((wp, i) =>
+  buildMercatorArcTable(wp.coord, WORLD_TOUR_ROUTE[(i + 1) % WORLD_TOUR_ROUTE.length].coord),
+);
 
-export function getRouteSegments(): [number, number][][] {
-  const segments: [number, number][][] = [];
-  let current: [number, number][] = [];
+// Length of the drawn loop, rounded to 100 km.
+export const ROUTE_TOTAL_DISTANCE_KM =
+  Math.round(ROUTE_LEG_TABLES.reduce((sum, leg) => sum + leg.totalKm, 0) / 100) * 100;
 
-  for (let i = 0; i < WORLD_TOUR_ROUTE.length; i++) {
-    const wp = WORLD_TOUR_ROUTE[i];
-    if (i > 0) {
-      const prev = WORLD_TOUR_ROUTE[i - 1];
-      const lngDiff = Math.abs(wp.coord[1] - prev.coord[1]);
-      if (lngDiff > 180) {
-        segments.push(current);
-        current = [];
-      }
-    }
-    current.push(wp.coord);
-  }
-  if (current.length > 0) segments.push(current);
-  return segments;
+/** The closed loop (origin repeated at the end), split for drawing at the antimeridian. */
+export function getRouteSegments(): LatLng[][] {
+  const ring: LatLng[] = [...WORLD_TOUR_ROUTE.map(wp => wp.coord), WORLD_TOUR_ROUTE[0].coord];
+  return splitAtAntimeridian(ring);
 }

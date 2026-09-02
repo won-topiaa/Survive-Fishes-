@@ -1,6 +1,6 @@
 import React from 'react';
 import type { GameState } from '../types/game';
-import { engine } from '../engine/GameEngine';
+import { engine, DANGER_COUNTDOWN } from '../engine/GameEngine';
 
 interface DangerAlertModalProps {
   state: GameState;
@@ -9,7 +9,7 @@ interface DangerAlertModalProps {
 export const DangerAlertModal: React.FC<DangerAlertModalProps> = ({ state }) => {
   if (state.phase !== 'DANGER_ALERT' || !state.currentDanger) return null;
 
-  const pct = (state.dangerCountdown / 300) * 100;
+  const pct = (state.dangerCountdown / DANGER_COUNTDOWN) * 100;
   const isUrgent = state.dangerCountdown < 60;
   const minutes = Math.floor(state.dangerCountdown / 60);
   const seconds = Math.floor(state.dangerCountdown % 60);
@@ -50,7 +50,7 @@ export const DangerAlertModal: React.FC<DangerAlertModalProps> = ({ state }) => 
             />
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            5분 내 회피하면 100% 생존 | 방어 버블: {state.shieldTokens}개
+            {DANGER_COUNTDOWN / 60}분 내 회피하면 100% 생존 | 방어 버블: {state.shieldTokens}개
           </p>
         </div>
 

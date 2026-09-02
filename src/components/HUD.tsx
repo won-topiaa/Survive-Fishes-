@@ -1,21 +1,6 @@
 import React from 'react';
 import type { GameState } from '../types/game';
-
-function formatTime(seconds: number): string {
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (d > 0) return `${d}일 ${h}시간 ${m}분`;
-  if (h > 0) return `${h}시간 ${m}분`;
-  return `${m}분`;
-}
-
-function formatCooldown(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
+import { formatDuration, formatCooldown, formatKm, formatSleepWindow } from '../utils/format';
 
 interface HUDProps {
   state: GameState;
@@ -24,12 +9,9 @@ interface HUDProps {
 export const HUD: React.FC<HUDProps> = ({ state }) => {
   if (state.phase === 'MENU' || state.phase === 'SPECIES_SELECT') return null;
 
-  const speedKmH = state.species
-    ? ((50000 / (state.species.expectedStandardDays * 24)) * (state.isBoostActive ? 2 : 1) * (state.depth === 'SURFACE' ? 1.3 : state.depth === 'ABYSS' ? 0.5 : 1)).toFixed(1)
-    : '0';
-
   const depthLabels = { SURFACE: '표층', MID: '중층', ABYSS: '심해' };
   const depthSpeed = { SURFACE: '+30%', MID: '1.0x', ABYSS: '-50%' };
+  const sleepWindow = formatSleepWindow(state.sleepStart, state.sleepEnd);
 
   return (
     <div className="absolute top-3 left-3 z-[1000] bg-gray-900/95 text-cyan-400 p-4 rounded-lg border border-cyan-800/60 shadow-lg font-mono w-72 backdrop-blur-sm">
@@ -45,7 +27,7 @@ export const HUD: React.FC<HUDProps> = ({ state }) => {
         </div>
         <div className="flex justify-between">
           <span>수심: {depthLabels[state.depth]} ({depthSpeed[state.depth]})</span>
-          <span className="text-gray-400">{speedKmH} km/h</span>
+          <span className="text-gray-400">{state.currentSpeedKmH.toFixed(1)} km/h</span>
         </div>
         <div className="flex justify-between">
           <span>방어 버블</span>
@@ -53,11 +35,11 @@ export const HUD: React.FC<HUDProps> = ({ state }) => {
         </div>
         <div className="flex justify-between">
           <span>항해 시간</span>
-          <span className="text-gray-300">{formatTime(state.elapsedSeconds)}</span>
+          <span className="text-gray-300">{formatDuration(state.elapsedSeconds)}</span>
         </div>
         <div className="flex justify-between">
           <span>이동 거리</span>
-          <span className="text-gray-300">{state.distanceKm.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} km</span>
+          <span className="text-gray-300">{formatKm(state.distanceKm)} km</span>
         </div>
       </div>
 
@@ -86,7 +68,7 @@ export const HUD: React.FC<HUDProps> = ({ state }) => {
       )}
       {state.isSleepModeActive && (
         <div className="mt-2 text-indigo-300 text-xs">
-          🌙 야간 잠항 모드 활성
+          {state.isSleeping ? `🌙 야간 잠항 중 (${sleepWindow})` : `🌙 야간 잠항 예약됨 (${sleepWindow})`}
         </div>
       )}
 

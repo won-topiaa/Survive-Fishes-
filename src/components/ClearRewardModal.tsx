@@ -3,38 +3,42 @@ import type { PrizeFishType, FishPreparationType } from '../types/reward';
 import { PRIZE_FISH_OPTIONS } from '../types/reward';
 import type { GameState } from '../types/game';
 import { engine } from '../engine/GameEngine';
+import { formatDuration, formatKm } from '../utils/format';
 
 interface ClearRewardModalProps {
   state: GameState;
 }
 
-function formatTime(seconds: number): string {
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  return `${d}일 ${h}시간`;
-}
+const CONFETTI_COLORS = ['#eab308', '#22d3ee', '#ef4444', '#a855f7', '#22c55e', '#f97316'];
+const CONFETTI_GLYPHS = ['🎉', '🎊', '✨', '🏆', '🐟', '👑'];
+
+// Deterministic per-piece jitter (a cheap hash of the index) so the layout is
+// varied but stable: nothing re-randomises when the modal re-renders.
+const jitter = (i: number, salt: number) => {
+  const x = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+};
+const CONFETTI = Array.from({ length: 30 }, (_, i) => ({
+  left: `${jitter(i, 1) * 100}%`,
+  animation: `confetti-fall ${3 + jitter(i, 2) * 4}s linear ${jitter(i, 3) * 2}s infinite`,
+  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+  glyph: CONFETTI_GLYPHS[i % CONFETTI_GLYPHS.length],
+}));
 
 export const ClearRewardModal: React.FC<ClearRewardModalProps> = ({ state }) => {
   const [selected, setSelected] = useState<PrizeFishType | null>(null);
   const [prep, setPrep] = useState<FishPreparationType>('WHOLE_RAW');
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const confettiColors = ['#eab308', '#22d3ee', '#ef4444', '#a855f7', '#22c55e', '#f97316'];
-
   return (
     <div className="fixed inset-0 z-[2000] bg-black/90 flex items-center justify-center p-4 overflow-y-auto">
-      {Array.from({ length: 30 }).map((_, i) => (
+      {CONFETTI.map((piece, i) => (
         <div
           key={i}
           className="fixed text-2xl pointer-events-none"
-          style={{
-            left: `${Math.random() * 100}%`,
-            top: '-5%',
-            animation: `confetti-fall ${3 + Math.random() * 4}s linear ${Math.random() * 2}s infinite`,
-            color: confettiColors[i % confettiColors.length],
-          }}
+          style={{ left: piece.left, top: '-5%', animation: piece.animation, color: piece.color }}
         >
-          {['🎉', '🎊', '✨', '🏆', '🐟', '👑'][i % 6]}
+          {piece.glyph}
         </div>
       ))}
 
@@ -48,8 +52,8 @@ export const ClearRewardModal: React.FC<ClearRewardModalProps> = ({ state }) => 
             {state.species?.emoji} {state.species?.nameKo}(으)로 세계 일주 완주!
           </p>
           <div className="flex justify-center gap-6 mt-3 text-xs text-gray-400">
-            <span>항해 시간: {formatTime(state.elapsedSeconds)}</span>
-            <span>이동 거리: {state.distanceKm.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}km</span>
+            <span>항해 시간: {formatDuration(state.elapsedSeconds)}</span>
+            <span>이동 거리: {formatKm(state.distanceKm)}km</span>
           </div>
         </div>
 

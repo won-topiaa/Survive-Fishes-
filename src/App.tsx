@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -15,9 +15,12 @@ import { OverlayToggle } from './components/OverlayToggle';
 import type { OverlayState } from './components/OverlayToggle';
 import type { GameState } from './types/game';
 import type { SpeciesConfig } from './types/fish';
-import { OCEAN_CURRENTS, FISHING_ZONES, MARINE_PROTECTED_AREAS, DANGER_ZONES, getRouteSegments } from './data';
+import { OCEAN_CURRENTS, FISHING_ZONES, MARINE_PROTECTED_AREAS, DANGER_ZONES, ROUTE_TOTAL_DISTANCE_KM, getRouteSegments } from './data';
+import { splitAtAntimeridian } from './utils/geo';
+import { formatKm } from './utils/format';
 
 const ROUTE_SEGMENTS = getRouteSegments();
+const FOLLOW_PAUSE_MS = 20_000;
 
 const fishIcon = (emoji: string) =>
   L.divIcon({
@@ -50,12 +53,20 @@ function SpawnClickHandler({ onSpawn }: { onSpawn: (lat: number, lng: number) =>
   return null;
 }
 
+// Keeps the fish in view without fighting the user: a drag or zoom pauses the
+// auto-follow for a while, and otherwise the map only re-centres once the fish
+// drifts out of the central part of the viewport.
 function MapUpdater({ coord }: { coord: [number, number] }) {
-  const map = useMapEvents({});
+  const pausedUntil = useRef(0);
+  const map = useMapEvents({
+    dragstart() { pausedUntil.current = Date.now() + FOLLOW_PAUSE_MS; },
+    zoomstart() { pausedUntil.current = Date.now() + FOLLOW_PAUSE_MS; },
+  });
   useEffect(() => {
-    if (coord[0] !== 0 || coord[1] !== 0) {
-      map.setView(coord, map.getZoom(), { animate: true, duration: 0.5 });
-    }
+    if (coord[0] === 0 && coord[1] === 0) return;
+    if (Date.now() < pausedUntil.current) return;
+    if (map.getBounds().pad(-0.3).contains(coord)) return;
+    map.panTo(coord, { animate: true, duration: 0.5 });
   }, [coord, map]);
   return null;
 }
@@ -75,6 +86,10 @@ const App: React.FC = () => {
   const handleOverlayToggle = useCallback((key: keyof OverlayState) => {
     setOverlays(prev => ({ ...prev, [key]: !prev[key] }));
   }, []);
+
+  // The engine hands out a new pathHistory array only when it appends, so this
+  // recomputes on appends rather than on every tick.
+  const trailSegments = useMemo(() => splitAtAntimeridian(state.pathHistory), [state.pathHistory]);
 
   useEffect(() => {
     const unsub = engine.subscribe(() => {
@@ -139,7 +154,7 @@ const App: React.FC = () => {
             <h1 className="text-3xl text-cyan-400 font-bold mb-2 tracking-wider">OCEAN WANDERER</h1>
             <p className="text-gray-500 text-xs mb-1">v3.0 — 실데이터 기반 글로벌 해양 일주 시뮬레이터</p>
             <p className="text-gray-400 text-sm mb-6 mt-3">
-              전 세계 바다 75,000km를 일주하세요.<br/>
+              전 세계 바다 {ROUTE_TOTAL_DISTANCE_KM.toLocaleString()}km를 일주하세요.<br/>
               어종을 선택하고, 출발지를 찍어 항해를 시작합니다.
             </p>
             <button
@@ -227,12 +242,13 @@ const App: React.FC = () => {
             </Marker>
           )}
 
-          {state.pathHistory.length > 1 && (
+          {trailSegments.map((segment, i) => segment.length > 1 && (
             <Polyline
-              positions={state.pathHistory}
+              key={`trail-${i}`}
+              positions={segment}
               pathOptions={{ color: '#22d3ee', weight: 2, opacity: 0.5, dashArray: '4 6' }}
             />
-          )}
+          ))}
 
           {state.gravesites.map(g => (
             <Marker key={g.id} position={g.coord} icon={skullIcon}>
@@ -241,7 +257,7 @@ const App: React.FC = () => {
                   <strong>💀 {g.nickname}</strong><br />
                   어종: {g.species}<br />
                   사인: {g.causeOfDeath}<br />
-                  항해: {g.distanceTraveled.toLocaleString()}km<br />
+                  항해: {formatKm(g.distanceTraveled)}km<br />
                   <span style={{ color: '#999' }}>{g.diedAt}</span>
                 </div>
               </Popup>
