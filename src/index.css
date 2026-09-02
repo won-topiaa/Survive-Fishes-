@@ -48,6 +48,35 @@ html, body, #root {
   100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
 }
 
+/* Danger event effects (DangerBanner / DangerScreenEffect) */
+@keyframes danger-banner-in {
+  from { opacity: 0; transform: scale(0.7) translateY(-30px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes danger-banner-out {
+  to { opacity: 0; transform: scale(0.9) translateY(-10px); }
+}
+
+@keyframes danger-border-pulse {
+  from { opacity: 1; }
+  to   { opacity: 0.3; }
+}
+
+@keyframes screen-flash {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes edge-pulse {
+  from { opacity: 0.6; }
+  to   { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .danger-fx { animation: none !important; }
+}
+
 .animate-pulse-danger {
   animation: pulse-danger 1.5s ease-in-out infinite;
 }

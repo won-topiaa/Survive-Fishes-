@@ -151,8 +151,13 @@ const App: React.FC = () => {
       {state.phase === 'GAME_OVER' && <GameOverModal state={state} />}
       {state.phase === 'CLEARED' && <ClearRewardModal state={state} />}
 
-      <DangerScreenEffect danger={state.currentDanger} phase={state.phase} />
-      <DangerBanner danger={state.currentDanger} phase={state.phase} />
+      {/* One mount per alert: both assume `danger` is fixed for their lifetime. */}
+      {state.phase === 'DANGER_ALERT' && state.currentDanger && (
+        <>
+          <DangerScreenEffect danger={state.currentDanger} />
+          <DangerBanner danger={state.currentDanger} />
+        </>
+      )}
 
       {state.phase === 'MENU' && !waitingForPin && (
         <div className="absolute inset-0 z-[1500] flex items-center justify-center pointer-events-none">

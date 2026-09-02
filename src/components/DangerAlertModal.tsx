@@ -1,6 +1,7 @@
 import React from 'react';
 import type { GameState } from '../types/game';
 import { engine, DANGER_COUNTDOWN } from '../engine/GameEngine';
+import { DANGER_THEME } from '../data/dangerTheme';
 
 interface DangerAlertModalProps {
   state: GameState;
@@ -13,16 +14,7 @@ export const DangerAlertModal: React.FC<DangerAlertModalProps> = ({ state }) => 
   const isUrgent = state.dangerCountdown < 60;
   const minutes = Math.floor(state.dangerCountdown / 60);
   const seconds = Math.floor(state.dangerCountdown % 60);
-
-  const typeInfo: Record<string, { icon: string; color: string }> = {
-    FISHING: { icon: '🚢', color: 'text-orange-400' },
-    PREDATOR: { icon: '🦈', color: 'text-red-400' },
-    STORM: { icon: '🌀', color: 'text-purple-400' },
-    DEAD_ZONE: { icon: '☠️', color: 'text-green-400' },
-    HIGH_RISK: { icon: '⚓', color: 'text-amber-400' },
-  };
-
-  const info = typeInfo[state.currentDanger.type] || { icon: '⚠️', color: 'text-red-400' };
+  const theme = DANGER_THEME[state.currentDanger.type];
 
   return (
     <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4" style={{ background: 'rgba(127,29,29,0.4)' }}>
@@ -31,8 +23,8 @@ export const DangerAlertModal: React.FC<DangerAlertModalProps> = ({ state }) => 
           isUrgent ? 'border-red-500 animate-pulse-danger' : 'border-orange-500'
         }`}
       >
-        <div className="text-5xl mb-3">{info.icon}</div>
-        <h2 className={`text-xl font-bold mb-1 ${info.color}`}>
+        <div className="text-5xl mb-3">{theme.icon}</div>
+        <h2 className="text-xl font-bold mb-1" style={{ color: theme.hex }}>
           {state.currentDanger.name}
         </h2>
         <p className="text-sm text-gray-400 mb-4">

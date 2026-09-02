@@ -1,10 +1,17 @@
 import React, { useEffect } from 'react';
 import { useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { WORLD_GRID, GRID_RESOLUTION } from '../data/worldGrid';
+import { isLand } from '../data/worldGrid';
 
-const ROWS = WORLD_GRID.length;
-const COLS = WORLD_GRID[0].length;
+const LAND_FILL = 'rgba(80, 120, 160, 0.5)';
+const OCEAN_FILL = 'rgba(34, 211, 238, 0.03)';
+
+// Dot size and pitch for a zoom level, in whole pixels so the squares stay crisp.
+function latticeFor(zoom: number) {
+  const dot = zoom <= 3 ? 2 : zoom === 4 ? 4 : 6;
+  const step = dot + Math.max(1, Math.round(dot * 0.6));
+  return { dot, step };
+}
 
 class PixelGridLayer extends L.GridLayer {
   createTile(coords: L.Coords) {
@@ -16,43 +23,31 @@ class PixelGridLayer extends L.GridLayer {
     if (!ctx) return tile;
 
     const map = this._map;
-    const tileNW = coords.scaleBy(size);
+    const origin = coords.scaleBy(size); // tile's top-left corner in world pixels
+    const { dot, step } = latticeFor(coords.z);
+    const oceanDot = Math.max(1, Math.floor(dot / 2));
 
-    const cellDeg = GRID_RESOLUTION;
-    const zoomScale = Math.pow(2, coords.z - 2);
-    const dotSize = Math.max(2, Math.min(6, 1.2 * zoomScale));
-    const gap = Math.max(1, dotSize * 0.6);
-    const step = dotSize + gap;
+    // Anchor the lattice to world pixel coordinates rather than the tile's own
+    // origin, so the dot pitch stays continuous across tile seams.
+    const firstX = (step - (origin.x % step)) % step;
+    const firstY = (step - (origin.y % step)) % step;
 
-    for (let py = 0; py < size.y; py += Math.max(2, Math.floor(step))) {
-      for (let px = 0; px < size.x; px += Math.max(2, Math.floor(step))) {
-        const point = L.point(tileNW.x + px, tileNW.y + py);
-        const latlng = map.unproject(point, coords.z);
-        const lat = latlng.lat;
-        const lng = latlng.lng;
+    // Web Mercator is separable: longitude depends only on x and latitude only
+    // on y, so one unproject per column and per row covers the whole tile.
+    const lngs: number[] = [];
+    for (let px = firstX; px < size.x; px += step) {
+      lngs.push(map.unproject(L.point(origin.x + px, origin.y), coords.z).lng);
+    }
 
-        const row = Math.floor((90 - lat) / cellDeg);
-        const normLng = ((lng % 360) + 540) % 360 - 180;
-        const col = Math.floor((normLng + 180) / cellDeg);
-
-        if (row < 0 || row >= ROWS || col < 0 || col >= COLS) continue;
-
-        if (WORLD_GRID[row][col] === 'L') {
-          ctx.fillStyle = 'rgba(80, 120, 160, 0.5)';
-          ctx.fillRect(
-            Math.floor(px - dotSize * 0.5),
-            Math.floor(py - dotSize * 0.5),
-            dotSize,
-            dotSize,
-          );
+    for (let py = firstY; py < size.y; py += step) {
+      const lat = map.unproject(L.point(origin.x, origin.y + py), coords.z).lat;
+      for (let i = 0, px = firstX; px < size.x; px += step, i++) {
+        if (isLand(lat, lngs[i])) {
+          ctx.fillStyle = LAND_FILL;
+          ctx.fillRect(px, py, dot, dot);
         } else {
-          ctx.fillStyle = 'rgba(34, 211, 238, 0.03)';
-          ctx.fillRect(
-            Math.floor(px - dotSize * 0.3),
-            Math.floor(py - dotSize * 0.3),
-            dotSize * 0.6,
-            dotSize * 0.6,
-          );
+          ctx.fillStyle = OCEAN_FILL;
+          ctx.fillRect(px, py, oceanDot, oceanDot);
         }
       }
     }
