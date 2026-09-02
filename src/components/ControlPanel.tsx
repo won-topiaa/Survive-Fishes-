@@ -2,13 +2,7 @@ import React from 'react';
 import { engine } from '../engine/GameEngine';
 import type { GameState } from '../types/game';
 import type { DepthLayer } from '../types/fish';
-
-function formatCooldown(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
+import { formatCooldown } from '../utils/format';
 
 interface ControlPanelProps {
   state: GameState;

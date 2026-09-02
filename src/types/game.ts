@@ -11,7 +11,7 @@ export interface Gravesite {
 }
 
 export interface DangerEvent {
-  type: 'FISHING' | 'PREDATOR' | 'STORM' | 'DEAD_ZONE';
+  type: 'FISHING' | 'PREDATOR' | 'STORM' | 'DEAD_ZONE' | 'HIGH_RISK';
   name: string;
   severity: number;
   coord: [number, number];
@@ -32,10 +32,15 @@ export interface GameState {
   boostRemainingSeconds: number;
   boostCooldownRemaining: number;
   isSkillActive: boolean;
+  skillRemainingSeconds: number;
   skillCooldownRemaining: number;
   isSleepModeActive: boolean;
+  /** True only while sleep mode is armed AND the simulated clock is inside the night window. */
+  isSleeping: boolean;
   sleepStart: number;
   sleepEnd: number;
+  /** Effective cruising speed for the last tick, as the engine actually applied it. */
+  currentSpeedKmH: number;
   dangerCountdown: number;
   currentDanger: DangerEvent | null;
   dnaPoints: number;

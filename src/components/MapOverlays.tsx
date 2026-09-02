@@ -13,7 +13,7 @@ interface MapOverlaysProps {
   showDanger: boolean;
 }
 
-export const MapOverlays: React.FC<MapOverlaysProps> = ({
+export const MapOverlays: React.FC<MapOverlaysProps> = React.memo(({
   fishingZones, mpas, currents, dangerZones,
   showFishing, showMPA, showCurrents, showDanger,
 }) => {
@@ -58,7 +58,7 @@ export const MapOverlays: React.FC<MapOverlaysProps> = ({
             <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>
               🏝️ {mpa.nameKo}<br />
               보호 등급: {mpa.protection === 'FULL' ? '완전 보호' : '부분 보호'}<br />
-              어업 위험: 0%
+              어업 위험: {mpa.protection === 'FULL' ? '0%' : '50% 감소'}
             </span>
           </Tooltip>
         </Circle>
@@ -109,4 +109,4 @@ export const MapOverlays: React.FC<MapOverlaysProps> = ({
       ))}
     </>
   );
-};
+});

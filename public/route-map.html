@@ -44,8 +44,8 @@
 <div class="info-panel">
   <h1>🦈 OCEAN WANDERER v3.0</h1>
   <div class="sub">실데이터 기반 글로벌 해양 일주 시뮬레이터</div>
-  <div class="stat-row"><span class="stat-label">총 거리</span><span class="stat-value">75,000 km</span></div>
-  <div class="stat-row"><span class="stat-label">웨이포인트</span><span class="stat-value">82 지점</span></div>
+  <div class="stat-row"><span class="stat-label">총 거리</span><span class="stat-value">81,500 km</span></div>
+  <div class="stat-row"><span class="stat-label">웨이포인트</span><span class="stat-value">79 지점</span></div>
   <div class="stat-row"><span class="stat-label">위도 범위</span><span class="stat-value">70°N — 67°S</span></div>
   <div class="stat-row"><span class="stat-label">항해 구간</span><span class="stat-value">12 해역</span></div>
   <div class="stat-row"><span class="stat-label">출발/도착</span><span class="stat-value">대만 해협 22°N 118°E</span></div>
@@ -107,15 +107,26 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
 
 L.control.zoom({ position: 'topright' }).addTo(routeMap);
 
-// Split route at date line for clean rendering
+// Split route at the date line, keeping the crossing leg: end one segment at the
+// ±180° edge and start the next at the opposite edge, at the interpolated latitude.
 function splitRoute(coords) {
   const segs = []; let cur = [];
   for (let i = 0; i < coords.length; i++) {
+    const [lat, lng] = coords[i];
     if (i > 0) {
-      const diff = Math.abs(coords[i][1] - coords[i-1][1]);
-      if (diff > 180) { if (cur.length) segs.push(cur); cur = []; }
+      const [prevLat, prevLng] = coords[i-1];
+      const rawDiff = lng - prevLng;
+      if (Math.abs(rawDiff) > 180) {
+        const unwrapped = rawDiff > 0 ? lng - 360 : lng + 360;
+        const edge = rawDiff > 0 ? -180 : 180;
+        const t = (edge - prevLng) / (unwrapped - prevLng);
+        const crossLat = prevLat + (lat - prevLat) * t;
+        cur.push([crossLat, edge]);
+        segs.push(cur);
+        cur = [[crossLat, -edge]];
+      }
     }
-    cur.push(coords[i]);
+    cur.push([lat, lng]);
   }
   if (cur.length) segs.push(cur);
   return segs;

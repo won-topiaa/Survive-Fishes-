@@ -1,18 +1,10 @@
 import React from 'react';
 import type { GameState } from '../types/game';
 import { engine } from '../engine/GameEngine';
+import { formatDuration, formatKm } from '../utils/format';
 
 interface GameOverModalProps {
   state: GameState;
-}
-
-function formatTime(seconds: number): string {
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (d > 0) return `${d}일 ${h}시간 ${m}분`;
-  if (h > 0) return `${h}시간 ${m}분`;
-  return `${m}분`;
 }
 
 export const GameOverModal: React.FC<GameOverModalProps> = ({ state }) => {
@@ -32,11 +24,11 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({ state }) => {
           </div>
           <div className="flex justify-between text-gray-300">
             <span>항해 시간</span>
-            <span>{formatTime(state.elapsedSeconds)}</span>
+            <span>{formatDuration(state.elapsedSeconds)}</span>
           </div>
           <div className="flex justify-between text-gray-300">
             <span>이동 거리</span>
-            <span>{state.distanceKm.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} km</span>
+            <span>{formatKm(state.distanceKm)} km</span>
           </div>
           <div className="flex justify-between text-gray-300">
             <span>진행률</span>
