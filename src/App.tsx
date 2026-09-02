@@ -13,6 +13,9 @@ import { GameOverModal } from './components/GameOverModal';
 import { MapOverlays } from './components/MapOverlays';
 import { OverlayToggle } from './components/OverlayToggle';
 import type { OverlayState } from './components/OverlayToggle';
+import { PixelWorldMap } from './components/PixelWorldMap';
+import { DangerBanner } from './components/DangerBanner';
+import { DangerScreenEffect } from './components/DangerScreenEffect';
 import type { GameState } from './types/game';
 import type { SpeciesConfig } from './types/fish';
 import { OCEAN_CURRENTS, FISHING_ZONES, MARINE_PROTECTED_AREAS, DANGER_ZONES, ROUTE_TOTAL_DISTANCE_KM, getRouteSegments } from './data';
@@ -81,6 +84,7 @@ const App: React.FC = () => {
     currents: false,
     danger: true,
     route: true,
+    pixelMap: true,
   });
 
   const handleOverlayToggle = useCallback((key: keyof OverlayState) => {
@@ -147,6 +151,9 @@ const App: React.FC = () => {
       {state.phase === 'GAME_OVER' && <GameOverModal state={state} />}
       {state.phase === 'CLEARED' && <ClearRewardModal state={state} />}
 
+      <DangerScreenEffect danger={state.currentDanger} phase={state.phase} />
+      <DangerBanner danger={state.currentDanger} phase={state.phase} />
+
       {state.phase === 'MENU' && !waitingForPin && (
         <div className="absolute inset-0 z-[1500] flex items-center justify-center pointer-events-none">
           <div className="bg-black/85 p-8 rounded-xl text-center border border-cyan-700/50 pointer-events-auto max-w-md backdrop-blur-sm">
@@ -212,6 +219,8 @@ const App: React.FC = () => {
             url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>'
           />
+
+          <PixelWorldMap visible={overlays.pixelMap} />
 
           {(waitingForPin || state.phase === 'MENU') && (
             <SpawnClickHandler onSpawn={handleMapSpawn} />
