@@ -7,6 +7,18 @@ export interface ActiveSkill {
   durationSec: number;
   cooldownSec: number;
   description: string;
+  /** Share (0..1) of the against-current speed penalty removed while the skill runs. */
+  headwindReduction?: number;
+  /** Share (0..1) of the abyss stamina drain removed while the skill runs. */
+  abyssDrainReduction?: number;
+}
+
+/** Always-on species trait. The engine takes the larger of this and the active skill's value. */
+export interface PassiveTrait {
+  nameKo: string;
+  description: string;
+  headwindReduction?: number;
+  abyssDrainReduction?: number;
 }
 
 export interface SpeciesConfig {
@@ -20,6 +32,7 @@ export interface SpeciesConfig {
   predatorEvasion: number;
   fishingEvasion: number;
   activeSkill?: ActiveSkill;
+  passiveTrait?: PassiveTrait;
   description: string;
 }
 
@@ -47,7 +60,8 @@ export const ALL_SPECIES: SpeciesConfig[] = [
     expectedStandardDays: 21,
     predatorEvasion: 98,
     fishingEvasion: 55,
-    activeSkill: { name: 'Deep Intelligence', nameKo: '심해 지능', durationSec: 90, cooldownSec: 360, description: '심해 잠항 에너지 소모 50% 감소' },
+    activeSkill: { name: 'Deep Intelligence', nameKo: '심해 지능', durationSec: 90, cooldownSec: 360, description: '90초간 심해 체력 소모 없음', abyssDrainReduction: 1 },
+    passiveTrait: { nameKo: '심해 적응', description: '심해 잠항 체력 소모 상시 50% 감소', abyssDrainReduction: 0.5 },
     description: '지능형 최상위 포식자. 심해 특화.'
   },
   {
@@ -111,7 +125,8 @@ export const ALL_SPECIES: SpeciesConfig[] = [
     expectedStandardDays: 11.7,
     predatorEvasion: 50,
     fishingEvasion: 25,
-    activeSkill: { name: 'Current Rider', nameKo: '해류 탑승', durationSec: 60, cooldownSec: 300, description: '역방향 조류 감속 페널티 50% 경감' },
+    activeSkill: { name: 'Current Rider', nameKo: '해류 탑승', durationSec: 60, cooldownSec: 300, description: '60초간 역류 감속 완전 무시', headwindReduction: 1 },
+    passiveTrait: { nameKo: '해류 적응', description: '역류 감속 페널티 상시 50% 경감', headwindReduction: 0.5 },
     description: '해류 저항력 우수. 역류에 강함.'
   },
   {

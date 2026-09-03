@@ -28,6 +28,32 @@ html, body, #root {
   filter: saturate(0.7) brightness(0.8);
 }
 
+/* Dark popup / tooltip theme: the AtmosphereLayer (night tint, rain) sits above
+   the map panes, so Leaflet's white chrome would turn muddy under it. Prefixed
+   with .leaflet-container because leaflet.css loads after this file and would
+   otherwise win on equal specificity. */
+.leaflet-container .leaflet-popup-content-wrapper,
+.leaflet-container .leaflet-popup-tip {
+  background: #0f172a;
+  color: #cbd5e1;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.6);
+}
+.leaflet-container .leaflet-popup-content-wrapper {
+  border: 1px solid #334155;
+}
+.leaflet-container .leaflet-popup a.leaflet-popup-close-button {
+  color: #94a3b8;
+}
+.leaflet-container .leaflet-tooltip {
+  background: #0f172a;
+  color: #cbd5e1;
+  border-color: #334155;
+}
+.leaflet-container .leaflet-tooltip-top::before { border-top-color: #334155; }
+.leaflet-container .leaflet-tooltip-bottom::before { border-bottom-color: #334155; }
+.leaflet-container .leaflet-tooltip-left::before { border-left-color: #334155; }
+.leaflet-container .leaflet-tooltip-right::before { border-right-color: #334155; }
+
 @keyframes pulse-danger {
   0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
   50% { box-shadow: 0 0 30px 10px rgba(239, 68, 68, 0.2); }
@@ -73,8 +99,19 @@ html, body, #root {
   to   { opacity: 1; }
 }
 
+/* Environment effects (Minimap / AtmosphereLayer) */
+@keyframes minimap-ping {
+  0%   { transform: translate(-50%, -50%) scale(0.6); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(2.4); opacity: 0; }
+}
+
+@keyframes haze-drift {
+  from { transform: translate(-3%, -2%) scale(1); }
+  to   { transform: translate(3%, 3%) scale(1.15); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .danger-fx { animation: none !important; }
+  .danger-fx, .weather-fx { animation: none !important; }
 }
 
 .animate-pulse-danger {

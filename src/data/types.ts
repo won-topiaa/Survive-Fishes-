@@ -44,6 +44,18 @@ export interface DangerZone {
   baseDanger: number;
 }
 
+export interface FeedingGround {
+  id: string;
+  name: string;
+  nameKo: string;
+  center: [number, number];
+  radiusKm: number;
+  /** 0..1 productivity; full inside the inner half of the radius, fading to 0 at the edge. */
+  richness: number;
+  /** What the fish eats there, for logs and tooltips. */
+  prey: string;
+}
+
 export interface SpeciesRealData {
   id: string;
   cruisingSpeedKmH: number;
